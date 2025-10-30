@@ -3,17 +3,20 @@ import pandas as pd
 from pymongo import MongoClient
 from math import radians, sin, cos, sqrt, atan2
 
-# setup
+# Setup database connections
 try:
+    # PostgreSQL connection (Structured Data)
     sql_conn = psycopg2.connect(
-        dbname="smart_waste",      
-        user="postgres",           
-        password="5484",   
+        dbname="smart_waste",
+        user="postgres",
+        password="5484",
         host="localhost",
         port="5432"
     )
     sql_cursor = sql_conn.cursor()
     print("Successfully connected to PostgreSQL.")
+
+    # MongoDB connection (Unstructured Data)
     mongo_client = MongoClient('mongodb://localhost:27017/')
     mongo_db = mongo_client['smart_waste_db']
     bin_readings_collection = mongo_db['bin_readings']
@@ -23,8 +26,12 @@ except Exception as e:
     print(f"Database connection error: {e}")
     exit()
 
+# -----------------------------------------------------------
+# DATABASE SETUP
+# -----------------------------------------------------------
 def setup_databases():
     """Create tables in PostgreSQL and indexes in MongoDB."""
+    # Create structured tables for bins and trucks
     sql_cursor.execute('''
         CREATE TABLE IF NOT EXISTS Bins (
             serial TEXT PRIMARY KEY,
@@ -41,19 +48,27 @@ def setup_databases():
             status TEXT DEFAULT 'Idle'
         )
     ''')
-    # Sample truck
-    sql_cursor.execute("""
-        INSERT INTO Trucks (id, name) 
-        VALUES (1, 'Truck-01')
-        ON CONFLICT (id) DO NOTHING
-    """)
+
+    # Insert sample trucks if they don't exist
+    trucks = [('Truck-01',), ('Truck-02',), ('Truck-03',)]
+    for t in trucks:
+        sql_cursor.execute("""
+            INSERT INTO Trucks (name)
+            VALUES (%s)
+            ON CONFLICT DO NOTHING
+        """, t)
+
     sql_conn.commit()
-    print("PostgreSQL tables created and sample truck added.")
+    print("PostgreSQL tables created and sample trucks added.")
+
+    # MongoDB Indexing (Query Optimization)
     bin_readings_collection.create_index([("serial", 1), ("time", -1)])
     bin_readings_collection.create_index([("status_current_fill_level", -1)])
     print("MongoDB indexes created.")
 
-# Data processing
+# -----------------------------------------------------------
+# DATA PROCESSING AND LOADING
+# -----------------------------------------------------------
 def load_data_from_csv(filepath='smart-bins-argyle-square.csv'):
     """Load data from CSV, clean it, and populate databases."""
     try:
@@ -63,13 +78,14 @@ def load_data_from_csv(filepath='smart-bins-argyle-square.csv'):
         print(f"Error: The file '{filepath}' was not found.")
         return
 
-    # changing data according to out requirements 
+    # Clean and transform data
     df.dropna(subset=['latlong', 'serial'], inplace=True)
     df[['lat', 'lon']] = df['latlong'].str.split(', ', expand=True).astype(float)
     df['time'] = pd.to_datetime(df['time'])
 
+    # Insert unique bins into PostgreSQL
     unique_bins = df[['serial', 'address', 'lat', 'lon']].drop_duplicates(subset=['serial'])
-    sql_cursor.execute("DELETE FROM Bins") 
+    sql_cursor.execute("DELETE FROM Bins")
     for _, row in unique_bins.iterrows():
         sql_cursor.execute("""
             INSERT INTO Bins (serial, address, lat, lon)
@@ -79,13 +95,16 @@ def load_data_from_csv(filepath='smart-bins-argyle-square.csv'):
     sql_conn.commit()
     print(f"Populated PostgreSQL with {len(unique_bins)} unique bins.")
 
+    # Insert sensor readings into MongoDB
     bin_readings_collection.delete_many({})
     bin_readings_collection.insert_many(df.to_dict('records'))
     print(f"Populated MongoDB with {len(df)} sensor readings.")
 
-# Core logic
+# -----------------------------------------------------------
+# CORE LOGIC: FINDING BINS THAT NEED COLLECTION
+# -----------------------------------------------------------
 def find_bins_for_collection(fill_level_threshold=75):
-    """Find bins that are 'Full' or above the threshold."""
+    """Find bins that are 'Full' or above the fill level threshold."""
     pipeline = [
         {'$sort': {'time': -1}},
         {'$group': {
@@ -104,16 +123,19 @@ def find_bins_for_collection(fill_level_threshold=75):
     print(f"Found {len(full_bins)} bins needing collection.")
     return full_bins
 
+# -----------------------------------------------------------
+# ROUTE OPTIMIZATION USING HAVERSINE FORMULA
+# -----------------------------------------------------------
 def haversine(lat1, lon1, lat2, lon2):
-    """Distance between two coordinates (km)."""
-    R = 6371
+    """Calculate distance between two coordinates (km)."""
+    R = 6371  # Earth's radius
     dLat, dLon = radians(lat2 - lat1), radians(lon2 - lon1)
     a = sin(dLat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dLon/2)**2
     c = 2 * atan2(sqrt(a), sqrt(1 - a))
     return R * c
 
 def create_optimized_route(bins_to_collect, start_location=(0, 0)):
-    """Nearest Neighbor route optimization."""
+    """Optimize route using Nearest Neighbor approach."""
     if not bins_to_collect:
         return []
 
@@ -126,6 +148,7 @@ def create_optimized_route(bins_to_collect, start_location=(0, 0)):
     current_lat, current_lon = start_location
     unvisited = list(bin_locations.keys())
 
+    # Nearest neighbor logic
     while unvisited:
         nearest_bin = min(
             unvisited,
@@ -141,46 +164,94 @@ def create_optimized_route(bins_to_collect, start_location=(0, 0)):
     print("Generated optimized route:", " -> ".join(route))
     return route
 
-# Truck sheduling
+# -----------------------------------------------------------
+# TRUCK SCHEDULING, ASSIGNMENT & DEALLOCATION
+# -----------------------------------------------------------
+def get_available_truck():
+    """Fetch the first available (Idle) truck."""
+    sql_cursor.execute("SELECT id, name FROM Trucks WHERE status = 'Idle' LIMIT 1;")
+    result = sql_cursor.fetchone()
+    if result:
+        truck_id, truck_name = result
+        print(f"Available Truck Found: {truck_name} (ID: {truck_id})")
+        return truck_id
+    else:
+        print("No idle trucks available at the moment.")
+        return None
+
 def assign_truck_to_route(truck_id, route):
-    """Assign truck to route, mark bins as in-service."""
-    print(f"\n--- Assigning Truck {truck_id} ---")
+    """Assign a given truck to a route and mark bins as In-Service."""
+    print(f"\n--- Assigning Truck {truck_id} to route ---")
+
     sql_cursor.execute("SELECT status FROM Trucks WHERE id = %s", (truck_id,))
     result = sql_cursor.fetchone()
+
     if not result:
         print(f"Truck {truck_id} not found.")
         return False
-    truck_status = result[0]
 
+    truck_status = result[0]
     if truck_status != 'Idle':
         print(f"Truck {truck_id} is not available.")
         return False
 
     try:
+        # Begin transaction: mark truck as busy
         sql_cursor.execute("UPDATE Trucks SET status = 'On-Route' WHERE id = %s", (truck_id,))
         for bin_serial in route:
-            sql_cursor.execute("UPDATE Bins SET status = 'In-Service' WHERE serial = %s", (bin_serial,))
+            sql_cursor.execute(
+                "UPDATE Bins SET status = 'In-Service' WHERE serial = %s AND status = 'Active';",
+                (bin_serial,)
+            )
         sql_conn.commit()
-        print(f"Truck {truck_id} assigned. Bins are now 'In-Service'.")
+        print(f"Truck {truck_id} successfully assigned. Bins marked 'In-Service'.")
         return True
     except Exception as e:
         sql_conn.rollback()
         print(f"Transaction failed: {e}")
         return False
 
+def complete_route(truck_id):
+    """Mark a truck's route as complete and reset statuses."""
+    print(f"\n--- Completing Route for Truck {truck_id} ---")
+    try:
+        # Set truck to Idle and free bins
+        sql_cursor.execute("UPDATE Trucks SET status = 'Idle' WHERE id = %s;", (truck_id,))
+        sql_cursor.execute("UPDATE Bins SET status = 'Active' WHERE status = 'In-Service';")
+        sql_conn.commit()
+        print(f"Truck {truck_id} is now Idle. All bins reset to Active.")
+    except Exception as e:
+        sql_conn.rollback()
+        print(f"Error completing route for truck {truck_id}: {e}")
+
+# -----------------------------------------------------------
+# MAIN EXECUTION
+# -----------------------------------------------------------
 if __name__ == '__main__':
     setup_databases()
     load_data_from_csv()
 
+    # STEP 1: Find bins needing collection
     bins_to_collect = find_bins_for_collection(fill_level_threshold=80)
 
     if bins_to_collect:
-        start_location = (-37.80, 144.96)  # Example start
-        optimized_route = create_optimized_route(bins_to_collect, start_location)
-        assign_truck_to_route(1, optimized_route)
-    else:
-        print("\nNo bins require collection.")
+        start_location = (-37.80, 144.96)  # Example depot
 
+        # STEP 2: Assign available truck automatically
+        truck_id = get_available_truck()
+        if truck_id:
+            optimized_route = create_optimized_route(bins_to_collect, start_location)
+            success = assign_truck_to_route(truck_id, optimized_route)
+
+            if success:
+                # Simulate completion of the route after collection
+                complete_route(truck_id)
+        else:
+            print("⚠️ No available trucks — try again later.")
+    else:
+        print("\nNo bins require collection at this time.")
+
+    # Close connections
     sql_conn.close()
     mongo_client.close()
     print("\n--- Script finished. Connections closed. ---")
