@@ -1,4 +1,3 @@
-# backend/app.py
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import trial_core as core
@@ -38,9 +37,9 @@ def dashboard():
         "full_bins": summary.get("full_bins", 0),
         "active_trucks": summary.get("active_trucks", 0),
         "total_trucks": summary.get("idle_trucks", 0) + summary.get("active_trucks", 0),
-        "active_routes": summary.get("active_routes", 0),
-        "alerts": summary.get("alerts", 3),
-        "landfill_usage": summary.get("landfill_usage", 68),
+        "active_routes": summary.get("active_trucks", 0), # Simplified: 1 truck = 1 active route
+        "alerts": summary.get("alerts", 3), # Get actual alert count
+        "landfill_usage": summary.get("landfill_usage", 68), # Placeholder
     }
 
     return jsonify(response), 200
@@ -52,7 +51,14 @@ def dashboard():
 @app.route("/api/bins", methods=["GET"])
 def bins():
     """Return standardized bin data for frontend."""
-    raw_bins = list(bin_readings_collection.find({}, {"_id": 0}).limit(100))
+    # Using aggregation pipeline to get latest reading for each bin
+    pipeline = [
+        {"$sort": {"time": -1}},
+        {"$group": {"_id": "$serial", "latest": {"$first": "$$ROOT"}}},
+        {"$replaceRoot": {"newRoot": "$latest"}},
+        {"$limit": 100}
+    ]
+    raw_bins = list(bin_readings_collection.aggregate(pipeline))
 
     formatted_bins = []
     for b in raw_bins:
@@ -67,7 +73,6 @@ def bins():
         })
 
     return jsonify(formatted_bins), 200
-
 
 
 # ---------------------------------------------
@@ -89,14 +94,14 @@ def trucks():
 def alerts():
     """Return recent system alerts."""
     sql_cursor.execute("""
-        SELECT type, message, severity, timestamp 
+        SELECT id, type, message, severity, timestamp 
         FROM MonitoringAlerts 
         ORDER BY timestamp DESC 
         LIMIT 10;
     """)
     data = sql_cursor.fetchall()
     alerts_list = [
-        {"type": a[0], "message": a[1], "severity": a[2], "timestamp": str(a[3])}
+        {"id": a[0], "type": a[1], "message": a[2], "severity": a[3], "timestamp": str(a[4])}
         for a in data
     ]
     return jsonify(alerts_list), 200
@@ -125,26 +130,8 @@ def landfills():
     ]
     return jsonify(landfills_list), 200
 
-
 # ---------------------------------------------
-# MONITORING ENDPOINT
-# ---------------------------------------------
-@app.route("/api/monitoring", methods=["GET"])
-def monitoring():
-    """Return live bin monitoring data."""
-    pipeline = [
-        {"$sort": {"time": -1}},
-        {"$group": {"_id": "$serial", "latest": {"$first": "$$ROOT"}}},
-        {"$replaceRoot": {"newRoot": "$latest"}},
-    ]
-    data = list(bin_readings_collection.aggregate(pipeline))
-    for d in data:
-        d.pop("_id", None)
-    return jsonify(data), 200
-
-
-# ---------------------------------------------
-# TRIGGER COLLECTION ENDPOINT
+# TRIGGER COLLECTION ENDPOINT (MODIFIED)
 # ---------------------------------------------
 @app.route("/api/collect", methods=["POST"])
 def collect():
@@ -159,9 +146,37 @@ def collect():
 
     route = core.create_optimized_route(bins)
     core.assign_truck_to_route(sql_cursor, sql_conn, truck[0], route)
-    core.complete_route(sql_cursor, sql_conn, truck[0])
+    
+    # This line was REMOVED to keep the truck on-route
+    # core.complete_route(sql_cursor, sql_conn, truck[0]) 
+    
+    return jsonify({"message": f"Truck {truck[1]} assigned to route."}), 200
 
-    return jsonify({"message": f"Truck {truck[1]} assigned and route completed."}), 200
+
+# ---------------------------------------------
+# COMPLETE ROUTE ENDPOINT (NEW)
+# ---------------------------------------------
+@app.route("/api/complete_route/<int:truck_id>", methods=["POST"])
+def complete_route_endpoint(truck_id):
+    """Mark a truck's route as complete and reset its status."""
+    try:
+        # Check if truck exists and is on-route
+        sql_cursor.execute("SELECT name, status FROM Trucks WHERE id = %s", (truck_id,))
+        truck = sql_cursor.fetchone()
+        
+        if not truck:
+            return jsonify({"message": "Truck not found."}), 404
+        
+        if truck[1] != 'On-Route':
+            return jsonify({"message": f"Truck {truck[0]} is not on an active route."}), 400
+
+        # Call the core function to complete the route
+        core.complete_route(sql_cursor, sql_conn, truck_id)
+        
+        return jsonify({"message": f"Route for truck {truck[0]} completed."}), 200
+    except Exception as e:
+        sql_conn.rollback()
+        return jsonify({"message": f"Error completing route: {e}"}), 500
 
 
 # ---------------------------------------------
