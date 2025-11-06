@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
 import { Truck, MapPin, Calendar, Wrench, X } from "lucide-react";
+import { Calendar as BigCalendar, momentLocalizer } from "react-big-calendar";
+import moment from "moment";
+import "react-big-calendar/lib/css/react-big-calendar.css";
+
+const localizer = momentLocalizer(moment);
 
 export default function TruckManagement() {
   const [trucks, setTrucks] = useState<any[]>([]);
@@ -41,7 +46,7 @@ export default function TruckManagement() {
     }
   };
 
-  // ✅ Assign Truck
+  // Assign Truck
   const handleAssignTruck = async () => {
     setAssigning(true);
     try {
@@ -58,7 +63,7 @@ export default function TruckManagement() {
     }
   };
 
-  // ✅ Complete Route
+  // Complete Route
   const handleCompleteRoute = async (truckId: number) => {
     try {
       const res = await fetch(`${API_BASE}/api/complete_route/${truckId}`, {
@@ -75,7 +80,7 @@ export default function TruckManagement() {
     }
   };
 
-  // ✅ Create Route
+  // Create Route
   const handleCreateRoute = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -84,7 +89,6 @@ export default function TruckManagement() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newRoute),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Failed to create route");
 
@@ -99,7 +103,18 @@ export default function TruckManagement() {
     }
   };
 
-  // Status counters
+  // Convert routes to calendar events
+  const calendarEvents = routes.map((r) => ({
+    id: r.id,
+    title: `${r.name} (${r.truck_name || "Unassigned"})`,
+    start: r.scheduled_date ? new Date(r.scheduled_date) : new Date(),
+    end: r.scheduled_date
+      ? new Date(moment(r.scheduled_date).add(2, "hours").toDate())
+      : new Date(moment().add(2, "hours").toDate()),
+    allDay: false,
+  }));
+
+  // Truck stats
   const totalFleet = trucks.length;
   const available = trucks.filter((t) => t.status === "Idle").length;
   const onRoute = trucks.filter((t) => t.status === "On-Route").length;
@@ -114,9 +129,7 @@ export default function TruckManagement() {
         </div>
         <div>
           <h3 className="text-lg font-semibold text-slate-800">Fleet Management</h3>
-          <p className="text-sm text-slate-500">
-            Schedule and monitor waste collection trucks
-          </p>
+          <p className="text-sm text-slate-500">Schedule and monitor waste collection trucks</p>
         </div>
       </div>
 
@@ -156,10 +169,7 @@ export default function TruckManagement() {
               trucks
                 .filter((t) => t.status === "On-Route")
                 .map((t) => (
-                  <div
-                    key={t.id}
-                    className="py-2 px-3 flex items-center justify-between bg-slate-50 rounded-lg text-slate-700"
-                  >
+                  <div key={t.id} className="py-2 px-3 flex items-center justify-between bg-slate-50 rounded-lg text-slate-700">
                     <span className="font-medium">🚛 {t.name}</span>
                     <button
                       onClick={() => handleCompleteRoute(t.id)}
@@ -177,10 +187,7 @@ export default function TruckManagement() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
           <div className="flex justify-between items-center px-4 py-3 border-b border-slate-200">
             <h4 className="text-sm font-semibold text-slate-700">Scheduled Routes</h4>
-            <button
-              onClick={() => setShowModal(true)}
-              className="text-emerald-600 text-sm font-medium hover:underline"
-            >
+            <button onClick={() => setShowModal(true)} className="text-emerald-600 text-sm font-medium hover:underline">
               Create Route
             </button>
           </div>
@@ -207,20 +214,20 @@ export default function TruckManagement() {
         </div>
       </div>
 
-      {/* Calendar View */}
+      {/* 📅 Calendar View */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h4 className="text-sm font-semibold text-slate-700">Calendar View</h4>
-          <div className="flex space-x-3 text-sm text-slate-500">
-            <button className="hover:text-emerald-600">Today</button>
-            <button className="hover:text-emerald-600">Week</button>
-            <button className="hover:text-emerald-600">Month</button>
-          </div>
-        </div>
-        <div className="border-2 border-dashed border-slate-200 rounded-xl h-48 flex flex-col justify-center items-center text-slate-400">
-          <Calendar className="w-10 h-10 mb-2 opacity-60" />
-          <p className="text-sm font-medium">Interactive Calendar</p>
-          <p className="text-xs text-slate-400">Drag-and-drop truck scheduling interface</p>
+        <h4 className="text-sm font-semibold text-slate-700 mb-4">Calendar View</h4>
+        <div style={{ height: 500 }}>
+          <BigCalendar
+            localizer={localizer}
+            events={calendarEvents}
+            startAccessor="start"
+            endAccessor="end"
+            style={{ height: "100%" }}
+            eventPropGetter={() => ({
+              style: { backgroundColor: "#10b981", borderRadius: "8px", color: "white" },
+            })}
+          />
         </div>
       </div>
 
@@ -228,10 +235,7 @@ export default function TruckManagement() {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-96 shadow-lg relative">
-            <button
-              onClick={() => setShowModal(false)}
-              className="absolute top-3 right-3 text-slate-400 hover:text-slate-600"
-            >
+            <button onClick={() => setShowModal(false)} className="absolute top-3 right-3 text-slate-400 hover:text-slate-600">
               <X className="w-5 h-5" />
             </button>
             <h4 className="text-lg font-semibold text-slate-800 mb-4">Create New Route</h4>
