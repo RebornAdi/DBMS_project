@@ -13,7 +13,17 @@ CORS(app)
 # SETUP DATABASE CONNECTIONS
 # ---------------------------------------------
 sql_conn, sql_cursor, mongo_client, mongo_db, bin_readings_collection = core.get_connections()
-core.setup_databases(sql_cursor, sql_conn, bin_readings_collection)
+core.setup_databases(sql_cursor, sql_conn, bin_readings_collection, drop_existing=False)
+
+# ---------------------------------------------
+# AUTO-LOAD DATA IF EMPTY
+# ---------------------------------------------
+if bin_readings_collection.count_documents({}) == 0:
+    print("⚠️ No bin data found in MongoDB. Loading from CSV...")
+    core.load_data_from_csv(sql_cursor, sql_conn, bin_readings_collection)
+    core.generate_system_alerts(sql_cursor, sql_conn)
+else:
+    print(f"✅ MongoDB already contains {bin_readings_collection.count_documents({})} records. Skipping CSV load.")
 
 # ---------------------------------------------
 # DASHBOARD ENDPOINT
@@ -41,9 +51,23 @@ def dashboard():
 # ---------------------------------------------
 @app.route("/api/bins", methods=["GET"])
 def bins():
-    """Return recent bin readings."""
-    bins_data = list(bin_readings_collection.find({}, {"_id": 0}).limit(100))
-    return jsonify(bins_data), 200
+    """Return standardized bin data for frontend."""
+    raw_bins = list(bin_readings_collection.find({}, {"_id": 0}).limit(100))
+
+    formatted_bins = []
+    for b in raw_bins:
+        formatted_bins.append({
+            "serial": b.get("serial"),
+            "address": b.get("address"),
+            "status": b.get("bin_status") or "Unknown",
+            "fill_level": b.get("status_current_fill_level") or 0,
+            "lat": b.get("lat"),
+            "lon": b.get("lon"),
+            "last_updated": b.get("time"),
+        })
+
+    return jsonify(formatted_bins), 200
+
 
 
 # ---------------------------------------------
@@ -85,7 +109,7 @@ def alerts():
 def landfills():
     """Return landfill capacity and usage."""
     sql_cursor.execute("""
-        SELECT id, name, total_capacity, current_usage, location 
+        SELECT id, name, capacity_tons, used_tons
         FROM Landfills;
     """)
     data = sql_cursor.fetchall()
@@ -93,9 +117,8 @@ def landfills():
         {
             "id": l[0],
             "name": l[1],
-            "total_capacity": l[2],
-            "current_usage": l[3],
-            "location": l[4],
+            "capacity_tons": l[2],
+            "used_tons": l[3],
             "usage_percent": round((l[3] / l[2]) * 100, 2) if l[2] else 0
         }
         for l in data
@@ -154,4 +177,5 @@ def home():
 # MAIN EXECUTION
 # ---------------------------------------------
 if __name__ == "__main__":
+    print("🚀 Starting Smart Waste Backend Server on http://localhost:5000")
     app.run(debug=True, port=5000)
