@@ -2,6 +2,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import trial_core as core
+from datetime import datetime
 
 # ---------------------------------------------
 # INITIALIZE FLASK APP
@@ -33,18 +34,33 @@ def dashboard():
     """Return frontend-ready dashboard summary data."""
     summary = core.get_dashboard_summary(sql_cursor, bin_readings_collection)
 
+    # Active routes (Routes table)
+    sql_cursor.execute("SELECT COUNT(*) FROM Routes WHERE status='In Progress';")
+    active_routes = (sql_cursor.fetchone() or (0,))[0]
+
+    # Alerts count
+    sql_cursor.execute("SELECT COUNT(*) FROM MonitoringAlerts;")
+    alerts = (sql_cursor.fetchone() or (0,))[0]
+
+    # Landfill usage (aggregate)
+    sql_cursor.execute("SELECT COALESCE(SUM(used_tons),0), COALESCE(SUM(capacity_tons),0) FROM Landfills;")
+    used, cap = sql_cursor.fetchone() or (0, 0)
+    landfill_usage = round((used / cap) * 100, 2) if cap else 0
+
+    # Total trucks
+    sql_cursor.execute("SELECT COUNT(*) FROM Trucks;")
+    total_trucks = (sql_cursor.fetchone() or (0,))[0]
+
     response = {
         "total_bins": summary.get("total_bins", 0) or summary.get("available_bins", 0),
         "full_bins": summary.get("full_bins", 0),
         "active_trucks": summary.get("active_trucks", 0),
-        "total_trucks": summary.get("idle_trucks", 0) + summary.get("active_trucks", 0),
-        "active_routes": summary.get("active_routes", 0),
-        "alerts": summary.get("alerts", 3),
-        "landfill_usage": summary.get("landfill_usage", 68),
+        "total_trucks": total_trucks,
+        "active_routes": active_routes,
+        "alerts": alerts,
+        "landfill_usage": landfill_usage,
     }
-
     return jsonify(response), 200
-
 
 # ---------------------------------------------
 # BINS ENDPOINT
@@ -53,7 +69,6 @@ def dashboard():
 def bins():
     """Return standardized bin data for frontend."""
     raw_bins = list(bin_readings_collection.find({}, {"_id": 0}).limit(100))
-
     formatted_bins = []
     for b in raw_bins:
         formatted_bins.append({
@@ -65,22 +80,54 @@ def bins():
             "lon": b.get("lon"),
             "last_updated": b.get("time"),
         })
-
     return jsonify(formatted_bins), 200
 
-
-
 # ---------------------------------------------
-# TRUCKS ENDPOINT
+# TRUCKS ENDPOINT (detailed fields)
 # ---------------------------------------------
 @app.route("/api/trucks", methods=["GET"])
 def trucks():
-    """Return all trucks and their status."""
-    sql_cursor.execute("SELECT id, name, status FROM Trucks;")
-    data = sql_cursor.fetchall()
-    trucks_list = [{"id": t[0], "name": t[1], "status": t[2]} for t in data]
+    """Return all trucks with detailed fields for frontend."""
+    sql_cursor.execute("""
+        SELECT id, truck_number, name, driver_name, capacity, current_load, status
+        FROM Trucks
+        ORDER BY truck_number;
+    """)
+    rows = sql_cursor.fetchall()
+    trucks_list = [{
+        "id": r[0],
+        "truck_number": r[1],
+        "name": r[2],
+        "driver_name": r[3],
+        "capacity": r[4],
+        "current_load": r[5],
+        "status": r[6],
+    } for r in rows]
     return jsonify(trucks_list), 200
 
+# ---------------------------------------------
+# ROUTES ENDPOINT
+# ---------------------------------------------
+@app.route("/api/routes", methods=["GET"])
+def routes():
+    """Return recent/scheduled routes for frontend."""
+    sql_cursor.execute("""
+        SELECT id, route_name, status, scheduled_date, distance_km, bin_sequence, truck_id
+        FROM Routes
+        ORDER BY scheduled_date DESC
+        LIMIT 50;
+    """)
+    rows = sql_cursor.fetchall()
+    routes_list = [{
+        "id": r[0],
+        "route_name": r[1],
+        "status": r[2],
+        "scheduled_date": r[3].isoformat() if r[3] else None,
+        "distance_km": r[4],
+        "bin_sequence": r[5],
+        "truck_id": r[6],
+    } for r in rows]
+    return jsonify(routes_list), 200
 
 # ---------------------------------------------
 # ALERTS ENDPOINT
@@ -96,11 +143,10 @@ def alerts():
     """)
     data = sql_cursor.fetchall()
     alerts_list = [
-        {"type": a[0], "message": a[1], "severity": a[2], "timestamp": str(a[3])}
+        {"type": a[0], "message": a[1], "severity": a[2], "timestamp": a[3].isoformat() if a[3] else None}
         for a in data
     ]
     return jsonify(alerts_list), 200
-
 
 # ---------------------------------------------
 # LANDFILLS ENDPOINT
@@ -125,13 +171,12 @@ def landfills():
     ]
     return jsonify(landfills_list), 200
 
-
 # ---------------------------------------------
 # MONITORING ENDPOINT
 # ---------------------------------------------
 @app.route("/api/monitoring", methods=["GET"])
 def monitoring():
-    """Return live bin monitoring data."""
+    """Return latest reading per bin (live view)."""
     pipeline = [
         {"$sort": {"time": -1}},
         {"$group": {"_id": "$serial", "latest": {"$first": "$$ROOT"}}},
@@ -141,7 +186,6 @@ def monitoring():
     for d in data:
         d.pop("_id", None)
     return jsonify(data), 200
-
 
 # ---------------------------------------------
 # TRIGGER COLLECTION ENDPOINT
@@ -153,7 +197,7 @@ def collect():
     if not bins:
         return jsonify({"message": "No bins need collection."}), 200
 
-    truck = core.get_available_truck(sql_cursor)
+    truck = core.get_available_truck(sql_cursor)  # (id, truck_number, name)
     if not truck:
         return jsonify({"message": "No trucks available."}), 200
 
@@ -163,15 +207,12 @@ def collect():
 
     return jsonify({"message": f"Truck {truck[1]} assigned and route completed."}), 200
 
-
 # ---------------------------------------------
 # HEALTH CHECK ENDPOINT
 # ---------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
-    """Health check route."""
     return jsonify({"status": "Backend is running ✅"}), 200
-
 
 # ---------------------------------------------
 # MAIN EXECUTION

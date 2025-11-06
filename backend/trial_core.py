@@ -1,4 +1,3 @@
-# backend/trial_core.py
 import psycopg2
 import pandas as pd
 from pymongo import MongoClient
@@ -14,7 +13,7 @@ def get_connections():
         sql_conn = psycopg2.connect(
             dbname="smart_waste",
             user="postgres",
-            password="5484",
+            password="5484", # Your password
             host="localhost",
             port="5432"
         )
@@ -31,7 +30,7 @@ def get_connections():
 # -----------------------------------------------------------
 # DATABASE SETUP
 # -----------------------------------------------------------
-def setup_databases(sql_cursor, sql_conn, bin_readings_collection, drop_existing=True):
+def setup_databases(sql_cursor, sql_conn, bin_readings_collection, drop_existing=False):
     """
     Create required tables and indexes.
     By default this will DROP existing tables (useful in dev). Set drop_existing=False to avoid drops.
@@ -46,7 +45,7 @@ def setup_databases(sql_cursor, sql_conn, bin_readings_collection, drop_existing
         sql_cursor.execute("DROP TABLE IF EXISTS Trucks CASCADE;")
         sql_cursor.execute("DROP TABLE IF EXISTS Bins CASCADE;")
         sql_conn.commit()
-        print("⚠️ Dropped existing tables/views (drop_existing=True).")
+        print("⚠️ Dropped existing tables/views (drop_existing=False).")
 
     # Core structured tables
     sql_cursor.execute("""
@@ -62,7 +61,7 @@ def setup_databases(sql_cursor, sql_conn, bin_readings_collection, drop_existing
         CREATE TABLE IF NOT EXISTS Trucks (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
-            status TEXT DEFAULT 'Idle'
+            status TEXT DEFAULT 'Idle' -- Status: Idle, On-Route
         );
     """)
     sql_cursor.execute("""
@@ -156,7 +155,7 @@ def load_data_from_csv(sql_cursor, sql_conn, bin_readings_collection, filepath="
         df = pd.read_csv(filepath)
         print(f"📄 Loaded {len(df)} records from CSV.")
     except FileNotFoundError:
-        print(f"❌ File not found: {filepath}")
+        print(f"❌ File not found: {filepath}. Please make sure 'smart-bins-argyle-square.csv' is in the same directory.")
         return
 
     df.dropna(subset=["latlong", "serial"], inplace=True)
@@ -229,6 +228,7 @@ def assign_truck_to_route(sql_cursor, sql_conn, truck_id, route):
     try:
         sql_cursor.execute("UPDATE Trucks SET status='On-Route' WHERE id=%s;", (truck_id,))
         for bin_doc in route:
+            # THIS IS THE CORRECTED LINE
             sql_cursor.execute("UPDATE Bins SET status='In-Service' WHERE serial=%s;", (bin_doc["serial"],))
 
         # Log transaction
@@ -274,13 +274,19 @@ def get_dashboard_summary(sql_cursor, bin_readings_collection):
     sql_cursor.execute("SELECT * FROM DashboardSummary;")
     row = sql_cursor.fetchone() or (0,0,0,0,0)
     full_bins = len(find_bins_for_collection(bin_readings_collection, 80))
+    
+    # Get total alerts
+    sql_cursor.execute("SELECT COUNT(*) FROM MonitoringAlerts;")
+    alerts_count = sql_cursor.fetchone()[0]
+
     return {
         "total_bins": int(row[0]),
         "active_bins": int(row[1]),
         "available_bins": int(row[2]),
         "active_trucks": int(row[3]),
         "idle_trucks": int(row[4]),
-        "full_bins": full_bins
+        "full_bins": full_bins,
+        "alerts": alerts_count
     }
 
 # -----------------------------------------------------------
@@ -298,7 +304,8 @@ if __name__ == "__main__":
         if truck:
             route = create_optimized_route(bins)
             assign_truck_to_route(sql_cursor, sql_conn, truck[0], route)
-            complete_route(sql_cursor, sql_conn, truck[0])
+            # We don't complete the route here for testing
+            # complete_route(sql_cursor, sql_conn, truck[0])
 
     print("📊 Dashboard Summary:", get_dashboard_summary(sql_cursor, bin_readings_collection))
     sql_conn.close()

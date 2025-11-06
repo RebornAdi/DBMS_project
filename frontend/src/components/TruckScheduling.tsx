@@ -1,51 +1,74 @@
 import { useState, useEffect } from 'react';
 import { Truck, Calendar, Wrench, MapPin, Clock } from 'lucide-react';
-import { supabase, type Truck as TruckType, type Route } from '../lib/supabase';
+
+type TruckType = {
+  id: number;
+  truck_number: string;
+  name?: string;
+  driver_name?: string;
+  capacity: number;
+  current_load: number;
+  status: 'Available' | 'On Route' | 'Maintenance' | string;
+};
+
+type RouteType = {
+  id: number;
+  route_name: string;
+  status: 'Scheduled' | 'In Progress' | 'Completed' | string;
+  scheduled_date: string | null;
+  distance_km?: number | null;
+  bin_sequence?: string[] | null;
+  truck_id?: number | null;
+};
 
 export default function TruckScheduling() {
   const [trucks, setTrucks] = useState<TruckType[]>([]);
-  const [routes, setRoutes] = useState<Route[]>([]);
+  const [routes, setRoutes] = useState<RouteType[]>([]);
   const [loading, setLoading] = useState(true);
+  const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [trucksRes, routesRes] = await Promise.all([
+          fetch(`${API_BASE}/api/trucks`),
+          fetch(`${API_BASE}/api/routes`),
+        ]);
+
+        if (!trucksRes.ok) throw new Error('Failed to fetch trucks');
+        if (!routesRes.ok) throw new Error('Failed to fetch routes');
+
+        const trucksData = await trucksRes.json();
+        const routesData = await routesRes.json();
+
+        setTrucks(trucksData || []);
+        setRoutes(routesData || []);
+      } catch (err) {
+        console.error('TruckScheduling fetch error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    try {
-      const [trucksResult, routesResult] = await Promise.all([
-        supabase.from('trucks').select('*').order('truck_number'),
-        supabase.from('routes').select('*').order('scheduled_date', { ascending: false }).limit(10)
-      ]);
-
-      if (trucksResult.error) throw trucksResult.error;
-      if (routesResult.error) throw routesResult.error;
-
-      setTrucks(trucksResult.data || []);
-      setRoutes(routesResult.data || []);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [API_BASE]);
 
   const getStatusColor = (status: string) => {
-    const colors = {
-      Available: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    const colors: Record<string, string> = {
+      'Available': 'bg-emerald-100 text-emerald-700 border-emerald-200',
       'On Route': 'bg-blue-100 text-blue-700 border-blue-200',
-      Maintenance: 'bg-amber-100 text-amber-700 border-amber-200',
+      'Maintenance': 'bg-amber-100 text-amber-700 border-amber-200',
     };
-    return colors[status as keyof typeof colors] || 'bg-slate-100 text-slate-700';
+    return colors[status] || 'bg-slate-100 text-slate-700 border-slate-200';
   };
 
   const getRouteStatusColor = (status: string) => {
-    const colors = {
-      Scheduled: 'bg-blue-100 text-blue-700 border-blue-200',
+    const colors: Record<string, string> = {
+      'Scheduled': 'bg-blue-100 text-blue-700 border-blue-200',
       'In Progress': 'bg-amber-100 text-amber-700 border-amber-200',
-      Completed: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      'Completed': 'bg-emerald-100 text-emerald-700 border-emerald-200',
     };
-    return colors[status as keyof typeof colors] || 'bg-slate-100 text-slate-700';
+    return colors[status] || 'bg-slate-100 text-slate-700 border-slate-200';
   };
 
   if (loading) {
@@ -72,6 +95,7 @@ export default function TruckScheduling() {
         </div>
       </div>
 
+      {/* Top stats */}
       <div className="grid grid-cols-4 gap-4">
         {[
           { label: 'Total Fleet', value: trucks.length, icon: Truck, color: 'bg-blue-500' },
@@ -97,15 +121,13 @@ export default function TruckScheduling() {
       </div>
 
       <div className="grid grid-cols-2 gap-6">
+        {/* Active Trucks */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
           <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
             <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
               <Truck className="w-5 h-5 text-blue-500" />
               <span>Active Trucks</span>
             </h4>
-            <button className="text-sm text-emerald-600 hover:text-emerald-700 font-medium">
-              Assign Truck
-            </button>
           </div>
           <div className="divide-y divide-slate-200">
             {trucks.map((truck) => (
@@ -118,7 +140,7 @@ export default function TruckScheduling() {
                     <div className="space-y-2">
                       <div>
                         <h5 className="font-semibold text-slate-800">{truck.truck_number}</h5>
-                        <p className="text-sm text-slate-500">{truck.driver_name}</p>
+                        <p className="text-sm text-slate-500">{truck.driver_name || '—'}</p>
                       </div>
                       <div className="flex items-center space-x-4 text-xs text-slate-600">
                         <span className="flex items-center space-x-1">
@@ -133,12 +155,12 @@ export default function TruckScheduling() {
                       <div className="w-48 bg-slate-200 rounded-full h-2 overflow-hidden">
                         <div
                           className="h-full bg-gradient-to-r from-blue-400 to-cyan-500 transition-all duration-500"
-                          style={{ width: `${(truck.current_load / truck.capacity) * 100}%` }}
+                          style={{ width: `${Math.min(100, (truck.current_load / Math.max(1, truck.capacity)) * 100)}%` }}
                         ></div>
                       </div>
                     </div>
                   </div>
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(truck.status)}`}>
+                  <span className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-semibold border ${getStatusColor(truck.status)}`}>
                     {truck.status}
                   </span>
                 </div>
@@ -147,15 +169,13 @@ export default function TruckScheduling() {
           </div>
         </div>
 
+        {/* Scheduled Routes */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
           <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
             <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
               <Calendar className="w-5 h-5 text-emerald-500" />
               <span>Scheduled Routes</span>
             </h4>
-            <button className="text-sm text-emerald-600 hover:text-emerald-700 font-medium">
-              Create Route
-            </button>
           </div>
           <div className="divide-y divide-slate-200">
             {routes.length > 0 ? (
@@ -165,16 +185,16 @@ export default function TruckScheduling() {
                     <div className="space-y-2 flex-1">
                       <div className="flex items-center justify-between">
                         <h5 className="font-semibold text-slate-800">{route.route_name}</h5>
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${getRouteStatusColor(route.status)}`}>
+                        <span className={`inline-flex items-center px-3 py-1 rounded-md text-xs font-semibold border ${getRouteStatusColor(route.status)}`}>
                           {route.status}
                         </span>
                       </div>
                       <div className="flex items-center space-x-4 text-xs text-slate-600">
                         <span className="flex items-center space-x-1">
                           <Clock className="w-3 h-3" />
-                          <span>{new Date(route.scheduled_date).toLocaleString()}</span>
+                          <span>{route.scheduled_date ? new Date(route.scheduled_date).toLocaleString() : '—'}</span>
                         </span>
-                        {route.distance_km && (
+                        {route.distance_km != null && (
                           <span className="flex items-center space-x-1">
                             <MapPin className="w-3 h-3" />
                             <span>{route.distance_km} km</span>
@@ -200,6 +220,7 @@ export default function TruckScheduling() {
         </div>
       </div>
 
+      {/* Calendar placeholder (same as your original) */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
         <div className="flex items-center justify-between mb-6">
           <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
