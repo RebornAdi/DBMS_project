@@ -1,12 +1,30 @@
 import { useState, useEffect } from 'react';
 import { Bell, AlertCircle, CheckCircle, Clock, XCircle } from 'lucide-react';
-import { supabase, type MonitoringAlert, type Transaction } from '../lib/supabase';
+
+interface MonitoringAlert {
+  id: number;
+  alert_type: string;
+  message: string;
+  severity: string;
+  is_resolved: boolean;
+  created_at: string;
+  resolved_at?: string;
+}
+
+interface Transaction {
+  id: number;
+  transaction_type: string;
+  status: string;
+  created_at: string;
+}
 
 export default function Monitoring() {
   const [alerts, setAlerts] = useState<MonitoringAlert[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'unresolved' | 'resolved'>('unresolved');
+
+  const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     fetchData();
@@ -16,26 +34,15 @@ export default function Monitoring() {
 
   const fetchData = async () => {
     try {
-      const [alertsResult, transactionsResult] = await Promise.all([
-        supabase
-          .from('monitoring_alerts')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(50),
-        supabase
-          .from('transactions')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(20)
+      const [alertsRes, transactionsRes] = await Promise.all([
+        fetch(`${API_BASE}/api/alerts`).then(res => res.json()),
+        fetch(`${API_BASE}/api/transactions`).then(res => res.json())
       ]);
 
-      if (alertsResult.error) throw alertsResult.error;
-      if (transactionsResult.error) throw transactionsResult.error;
-
-      setAlerts(alertsResult.data || []);
-      setTransactions(transactionsResult.data || []);
+      setAlerts(alertsRes || []);
+      setTransactions(transactionsRes || []);
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('Error fetching monitoring data:', error);
     } finally {
       setLoading(false);
     }
@@ -91,6 +98,7 @@ export default function Monitoring() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center space-x-4">
         <div className="bg-gradient-to-br from-red-500 to-pink-500 p-3 rounded-xl shadow-lg">
           <Bell className="w-6 h-6 text-white" />
@@ -101,12 +109,13 @@ export default function Monitoring() {
         </div>
       </div>
 
+      {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         {[
           { label: 'Active Alerts', value: unresolvedCount, icon: Bell, color: 'bg-red-500' },
           { label: 'Critical', value: criticalCount, icon: AlertCircle, color: 'bg-orange-500' },
-          { label: 'Resolved Today', value: alerts.filter(a => a.is_resolved).length, icon: CheckCircle, color: 'bg-emerald-500' },
-          { label: 'Success Rate', value: `${Math.round((transactions.filter(t => t.status === 'Success').length / transactions.length) * 100)}%`, icon: CheckCircle, color: 'bg-blue-500' },
+          { label: 'Resolved', value: alerts.filter(a => a.is_resolved).length, icon: CheckCircle, color: 'bg-emerald-500' },
+          { label: 'Success Rate', value: `${Math.round((transactions.filter(t => t.status === 'Success').length / (transactions.length || 1)) * 100)}%`, icon: CheckCircle, color: 'bg-blue-500' },
         ].map((stat, idx) => {
           const Icon = stat.icon;
           return (
@@ -125,7 +134,9 @@ export default function Monitoring() {
         })}
       </div>
 
+      {/* Alerts and Transactions */}
       <div className="grid grid-cols-3 gap-6">
+        {/* Alerts */}
         <div className="col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm">
           <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
             <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
@@ -153,6 +164,7 @@ export default function Monitoring() {
               ))}
             </div>
           </div>
+
           <div className="divide-y divide-slate-200 max-h-[600px] overflow-y-auto">
             {filteredAlerts.length > 0 ? (
               filteredAlerts.map((alert) => {
@@ -222,35 +234,8 @@ export default function Monitoring() {
           </div>
         </div>
 
+        {/* Transactions */}
         <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-            <div className="px-6 py-4 border-b border-slate-200">
-              <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
-                <Clock className="w-5 h-5 text-blue-500" />
-                <span>Recent Activity</span>
-              </h4>
-            </div>
-            <div className="p-4">
-              <div className="space-y-3">
-                {[
-                  { time: '2m ago', text: 'Bin #005 marked as overflow' },
-                  { time: '5m ago', text: 'Route optimization completed' },
-                  { time: '8m ago', text: 'Truck TRK-102 started route' },
-                  { time: '12m ago', text: 'Alert resolved: Bin #012' },
-                  { time: '15m ago', text: 'New route assigned to TRK-101' },
-                ].map((activity, idx) => (
-                  <div key={idx} className="flex items-start space-x-3 text-sm">
-                    <div className="w-2 h-2 bg-emerald-500 rounded-full mt-1.5 flex-shrink-0"></div>
-                    <div className="flex-1">
-                      <p className="text-slate-700">{activity.text}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{activity.time}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
             <div className="px-6 py-4 border-b border-slate-200">
               <h4 className="font-semibold text-slate-800 flex items-center space-x-2">

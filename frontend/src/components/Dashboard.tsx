@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Truck, Route, MapPin, TrendingUp, AlertCircle, Activity } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -13,6 +12,7 @@ export default function Dashboard() {
     landfillUsage: 0,
   });
   const [loading, setLoading] = useState(true);
+  const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     fetchStats();
@@ -20,32 +20,23 @@ export default function Dashboard() {
 
   const fetchStats = async () => {
     try {
-      const [binsResult, trucksResult, routesResult, alertsResult, landfillsResult] = await Promise.all([
-        supabase.from('bins').select('*'),
-        supabase.from('trucks').select('*'),
-        supabase.from('routes').select('*').eq('status', 'In Progress'),
-        supabase.from('monitoring_alerts').select('*').eq('is_resolved', false),
-        supabase.from('landfills').select('*'),
-      ]);
+      const response = await fetch(`${API_BASE}/api/dashboard`);
+      if (!response.ok) throw new Error("Failed to fetch dashboard data");
 
-      const bins = binsResult.data || [];
-      const trucks = trucksResult.data || [];
-      const landfills = landfillsResult.data || [];
+      const data = await response.json();
 
-      const totalCapacity = landfills.reduce((sum, l) => sum + l.total_capacity, 0);
-      const totalUsage = landfills.reduce((sum, l) => sum + l.current_usage, 0);
-
+      // ✅ Adjust this mapping based on your Flask /api/dashboard output
       setStats({
-        totalBins: bins.length,
-        fullBins: bins.filter(b => b.fill_level >= 70).length,
-        activeTrucks: trucks.filter(t => t.status === 'On Route').length,
-        totalTrucks: trucks.length,
-        activeRoutes: routesResult.data?.length || 0,
-        alerts: alertsResult.data?.length || 0,
-        landfillUsage: totalCapacity > 0 ? Math.round((totalUsage / totalCapacity) * 100) : 0,
+        totalBins: data.total_bins || 0,
+        fullBins: data.full_bins || 0,
+        activeTrucks: data.active_trucks || 0,
+        totalTrucks: data.total_trucks || data.active_trucks || 0,
+        activeRoutes: data.active_routes || 0,
+        alerts: data.alerts || 0,
+        landfillUsage: data.landfill_usage || 0,
       });
     } catch (error) {
-      console.error('Error fetching stats:', error);
+      console.error("Error fetching stats:", error);
     } finally {
       setLoading(false);
     }
@@ -77,6 +68,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-4 gap-6">
+        {/* BINS */}
         <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-4">
             <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -96,6 +88,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* TRUCKS */}
         <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-4">
             <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
@@ -115,6 +108,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ROUTES */}
         <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-4">
             <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
@@ -134,6 +128,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* ALERTS */}
         <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-4">
             <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
@@ -154,6 +149,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* LANDFILL USAGE */}
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm">
           <div className="px-6 py-4 border-b border-slate-200">
@@ -183,6 +179,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* LANDFILL PANEL */}
         <div className="space-y-6">
           <div className="bg-gradient-to-br from-slate-800 to-slate-700 rounded-xl p-6 text-white shadow-lg">
             <MapPin className="w-8 h-8 mb-3" />
@@ -229,6 +226,7 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* SYSTEM HEALTH */}
       <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-6 border border-emerald-200">
         <div className="flex items-start justify-between">
           <div>

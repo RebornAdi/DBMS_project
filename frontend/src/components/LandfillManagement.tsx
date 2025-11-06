@@ -1,10 +1,20 @@
 import { useState, useEffect } from 'react';
 import { MapPin, TrendingUp, AlertTriangle, BarChart3, Archive } from 'lucide-react';
-import { supabase, type Landfill } from '../lib/supabase';
+
+interface Landfill {
+  id: number;
+  name: string;
+  location: string;
+  total_capacity: number;
+  current_usage: number;
+  usage_percentage: number;
+  status: string;
+}
 
 export default function LandfillManagement() {
   const [landfills, setLandfills] = useState<Landfill[]>([]);
   const [loading, setLoading] = useState(true);
+  const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     fetchLandfills();
@@ -12,12 +22,9 @@ export default function LandfillManagement() {
 
   const fetchLandfills = async () => {
     try {
-      const { data, error } = await supabase
-        .from('landfills')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
+      const res = await fetch(`${API_BASE}/api/landfills`);
+      if (!res.ok) throw new Error(`HTTP error: ${res.status}`);
+      const data = await res.json();
       setLandfills(data || []);
     } catch (error) {
       console.error('Error fetching landfills:', error);
@@ -69,6 +76,7 @@ export default function LandfillManagement() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center space-x-4">
         <div className="bg-gradient-to-br from-orange-500 to-red-500 p-3 rounded-xl shadow-lg">
           <Archive className="w-6 h-6 text-white" />
@@ -79,6 +87,7 @@ export default function LandfillManagement() {
         </div>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-4 gap-4">
         {[
           { label: 'Total Sites', value: landfills.length, icon: MapPin, color: 'bg-blue-500' },
@@ -103,8 +112,11 @@ export default function LandfillManagement() {
         })}
       </div>
 
+      {/* Landfill Data & Charts */}
       <div className="grid grid-cols-3 gap-6">
+        {/* Left: Charts and Table */}
         <div className="col-span-2 space-y-6">
+          {/* Usage Trends Chart */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
             <div className="px-6 py-4 border-b border-slate-200">
               <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
@@ -129,23 +141,10 @@ export default function LandfillManagement() {
                   </div>
                 ))}
               </div>
-              <div className="mt-6 grid grid-cols-3 gap-4">
-                <div className="text-center">
-                  <p className="text-sm text-slate-500">Monthly Avg</p>
-                  <p className="text-xl font-bold text-slate-800">38.5k tons</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-slate-500">Growth Rate</p>
-                  <p className="text-xl font-bold text-emerald-600">+12%</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-slate-500">Projection</p>
-                  <p className="text-xl font-bold text-slate-800">54k tons</p>
-                </div>
-              </div>
             </div>
           </div>
 
+          {/* Landfill Table */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
             <div className="px-6 py-4 border-b border-slate-200">
               <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
@@ -200,6 +199,7 @@ export default function LandfillManagement() {
           </div>
         </div>
 
+        {/* Right: Alerts & Quick Stats */}
         <div className="space-y-6">
           <div className="bg-gradient-to-br from-orange-500 to-red-500 rounded-xl p-6 text-white shadow-lg">
             <AlertTriangle className="w-8 h-8 mb-3" />
@@ -223,15 +223,11 @@ export default function LandfillManagement() {
             <div className="p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-600">Total Capacity</span>
-                <span className="font-semibold text-slate-800">
-                  {(totalCapacity / 1000).toFixed(0)}k tons
-                </span>
+                <span className="font-semibold text-slate-800">{(totalCapacity / 1000).toFixed(0)}k tons</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-600">Current Usage</span>
-                <span className="font-semibold text-slate-800">
-                  {(totalUsage / 1000).toFixed(0)}k tons
-                </span>
+                <span className="font-semibold text-slate-800">{(totalUsage / 1000).toFixed(0)}k tons</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-slate-600">Available</span>
