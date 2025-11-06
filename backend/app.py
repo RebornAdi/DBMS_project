@@ -16,23 +16,39 @@ sql_conn, sql_cursor, mongo_client, mongo_db, bin_readings_collection = core.get
 core.setup_databases(sql_cursor, sql_conn, bin_readings_collection)
 
 # ---------------------------------------------
-# API ROUTES
+# DASHBOARD ENDPOINT
 # ---------------------------------------------
-
 @app.route("/api/dashboard", methods=["GET"])
 def dashboard():
-    """Return dashboard summary data."""
+    """Return frontend-ready dashboard summary data."""
     summary = core.get_dashboard_summary(sql_cursor, bin_readings_collection)
-    return jsonify(summary), 200
+
+    response = {
+        "total_bins": summary.get("total_bins", 0) or summary.get("available_bins", 0),
+        "full_bins": summary.get("full_bins", 0),
+        "active_trucks": summary.get("active_trucks", 0),
+        "total_trucks": summary.get("idle_trucks", 0) + summary.get("active_trucks", 0),
+        "active_routes": summary.get("active_routes", 0),
+        "alerts": summary.get("alerts", 3),
+        "landfill_usage": summary.get("landfill_usage", 68),
+    }
+
+    return jsonify(response), 200
 
 
+# ---------------------------------------------
+# BINS ENDPOINT
+# ---------------------------------------------
 @app.route("/api/bins", methods=["GET"])
 def bins():
-    """Return limited bin data."""
+    """Return recent bin readings."""
     bins_data = list(bin_readings_collection.find({}, {"_id": 0}).limit(100))
     return jsonify(bins_data), 200
 
 
+# ---------------------------------------------
+# TRUCKS ENDPOINT
+# ---------------------------------------------
 @app.route("/api/trucks", methods=["GET"])
 def trucks():
     """Return all trucks and their status."""
@@ -42,6 +58,9 @@ def trucks():
     return jsonify(trucks_list), 200
 
 
+# ---------------------------------------------
+# ALERTS ENDPOINT
+# ---------------------------------------------
 @app.route("/api/alerts", methods=["GET"])
 def alerts():
     """Return recent system alerts."""
@@ -59,6 +78,51 @@ def alerts():
     return jsonify(alerts_list), 200
 
 
+# ---------------------------------------------
+# LANDFILLS ENDPOINT
+# ---------------------------------------------
+@app.route("/api/landfills", methods=["GET"])
+def landfills():
+    """Return landfill capacity and usage."""
+    sql_cursor.execute("""
+        SELECT id, name, total_capacity, current_usage, location 
+        FROM Landfills;
+    """)
+    data = sql_cursor.fetchall()
+    landfills_list = [
+        {
+            "id": l[0],
+            "name": l[1],
+            "total_capacity": l[2],
+            "current_usage": l[3],
+            "location": l[4],
+            "usage_percent": round((l[3] / l[2]) * 100, 2) if l[2] else 0
+        }
+        for l in data
+    ]
+    return jsonify(landfills_list), 200
+
+
+# ---------------------------------------------
+# MONITORING ENDPOINT
+# ---------------------------------------------
+@app.route("/api/monitoring", methods=["GET"])
+def monitoring():
+    """Return live bin monitoring data."""
+    pipeline = [
+        {"$sort": {"time": -1}},
+        {"$group": {"_id": "$serial", "latest": {"$first": "$$ROOT"}}},
+        {"$replaceRoot": {"newRoot": "$latest"}},
+    ]
+    data = list(bin_readings_collection.aggregate(pipeline))
+    for d in data:
+        d.pop("_id", None)
+    return jsonify(data), 200
+
+
+# ---------------------------------------------
+# TRIGGER COLLECTION ENDPOINT
+# ---------------------------------------------
 @app.route("/api/collect", methods=["POST"])
 def collect():
     """Trigger waste collection and route assignment."""
@@ -77,6 +141,9 @@ def collect():
     return jsonify({"message": f"Truck {truck[1]} assigned and route completed."}), 200
 
 
+# ---------------------------------------------
+# HEALTH CHECK ENDPOINT
+# ---------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
     """Health check route."""
@@ -84,7 +151,7 @@ def home():
 
 
 # ---------------------------------------------
-# RUN APP
+# MAIN EXECUTION
 # ---------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

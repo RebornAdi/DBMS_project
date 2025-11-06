@@ -1,48 +1,39 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Truck, Route, MapPin, TrendingUp, AlertCircle, Activity } from 'lucide-react';
 
+interface DashboardStats {
+  total_bins: number;
+  full_bins: number;
+  active_trucks: number;
+  total_trucks: number;
+  active_routes: number;
+  alerts: number;
+  landfill_usage: number;
+}
+
 export default function Dashboard() {
-  const [stats, setStats] = useState({
-    totalBins: 0,
-    fullBins: 0,
-    activeTrucks: 0,
-    totalTrucks: 0,
-    activeRoutes: 0,
-    alerts: 0,
-    landfillUsage: 0,
-  });
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const API_BASE = import.meta.env.VITE_API_URL;
 
+  // Fetch dashboard stats from backend API
   useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/dashboard`);
+        if (!res.ok) throw new Error('Failed to fetch dashboard data');
+        const data = await res.json();
+        setStats(data);
+      } catch (error) {
+        console.error('Error fetching stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchStats();
-  }, []);
+  }, [API_BASE]);
 
-  const fetchStats = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/dashboard`);
-      if (!response.ok) throw new Error("Failed to fetch dashboard data");
-
-      const data = await response.json();
-
-      // ✅ Adjust this mapping based on your Flask /api/dashboard output
-      setStats({
-        totalBins: data.total_bins || 0,
-        fullBins: data.full_bins || 0,
-        activeTrucks: data.active_trucks || 0,
-        totalTrucks: data.total_trucks || data.active_trucks || 0,
-        activeRoutes: data.active_routes || 0,
-        alerts: data.alerts || 0,
-        landfillUsage: data.landfill_usage || 0,
-      });
-    } catch (error) {
-      console.error("Error fetching stats:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
+  if (loading || !stats) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
@@ -52,6 +43,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Header Section */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <div className="bg-gradient-to-br from-emerald-500 to-teal-500 p-3 rounded-xl shadow-lg">
@@ -67,90 +59,60 @@ export default function Dashboard() {
         </button>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-4 gap-6">
         {/* BINS */}
-        <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Trash2 className="w-6 h-6 text-blue-600" />
-            </div>
-            <span className="text-xs font-semibold text-slate-500 uppercase">Bins</span>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-slate-800">{stats.totalBins}</p>
-            <p className="text-sm text-slate-500 mt-1">Total active bins</p>
-            <div className="mt-3 pt-3 border-t border-slate-100">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-600">Need attention</span>
-                <span className="font-semibold text-amber-600">{stats.fullBins}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DashboardCard
+          title="Bins"
+          icon={<Trash2 className="w-6 h-6 text-blue-600" />}
+          bgColor="bg-blue-100"
+          total={stats.total_bins}
+          subtitle="Total active bins"
+          label="Need attention"
+          value={stats.full_bins}
+          valueColor="text-amber-600"
+        />
 
         {/* TRUCKS */}
-        <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center">
-              <Truck className="w-6 h-6 text-emerald-600" />
-            </div>
-            <span className="text-xs font-semibold text-slate-500 uppercase">Fleet</span>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-slate-800">{stats.totalTrucks}</p>
-            <p className="text-sm text-slate-500 mt-1">Total trucks</p>
-            <div className="mt-3 pt-3 border-t border-slate-100">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-600">On route</span>
-                <span className="font-semibold text-emerald-600">{stats.activeTrucks}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DashboardCard
+          title="Fleet"
+          icon={<Truck className="w-6 h-6 text-emerald-600" />}
+          bgColor="bg-emerald-100"
+          total={stats.total_trucks}
+          subtitle="Total trucks"
+          label="On route"
+          value={stats.active_trucks}
+          valueColor="text-emerald-600"
+        />
 
         {/* ROUTES */}
-        <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <Route className="w-6 h-6 text-purple-600" />
-            </div>
-            <span className="text-xs font-semibold text-slate-500 uppercase">Routes</span>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-slate-800">{stats.activeRoutes}</p>
-            <p className="text-sm text-slate-500 mt-1">Active routes</p>
-            <div className="mt-3 pt-3 border-t border-slate-100">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-600">Efficiency</span>
-                <span className="font-semibold text-purple-600">94%</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DashboardCard
+          title="Routes"
+          icon={<Route className="w-6 h-6 text-purple-600" />}
+          bgColor="bg-purple-100"
+          total={stats.active_routes}
+          subtitle="Active routes"
+          label="Efficiency"
+          value="94%"
+          valueColor="text-purple-600"
+        />
 
         {/* ALERTS */}
-        <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <AlertCircle className="w-6 h-6 text-red-600" />
-            </div>
-            <span className="text-xs font-semibold text-slate-500 uppercase">Alerts</span>
-          </div>
-          <div>
-            <p className="text-3xl font-bold text-slate-800">{stats.alerts}</p>
-            <p className="text-sm text-slate-500 mt-1">Active alerts</p>
-            <div className="mt-3 pt-3 border-t border-slate-100">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-600">Priority</span>
-                <span className="font-semibold text-red-600">High</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <DashboardCard
+          title="Alerts"
+          icon={<AlertCircle className="w-6 h-6 text-red-600" />}
+          bgColor="bg-red-100"
+          total={stats.alerts}
+          subtitle="Active alerts"
+          label="Priority"
+          value="High"
+          valueColor="text-red-600"
+        />
       </div>
 
-      {/* LANDFILL USAGE */}
+      {/* Landfill and Collection Section */}
       <div className="grid grid-cols-3 gap-6">
+        {/* Collection Efficiency */}
         <div className="col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm">
           <div className="px-6 py-4 border-b border-slate-200">
             <h4 className="font-semibold text-slate-800">Collection Efficiency</h4>
@@ -179,7 +141,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* LANDFILL PANEL */}
+        {/* Landfill Usage */}
         <div className="space-y-6">
           <div className="bg-gradient-to-br from-slate-800 to-slate-700 rounded-xl p-6 text-white shadow-lg">
             <MapPin className="w-8 h-8 mb-3" />
@@ -188,19 +150,24 @@ export default function Dashboard() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm opacity-90">Current Usage</span>
-                  <span className="text-xl font-bold">{stats.landfillUsage}%</span>
+                  <span className="text-xl font-bold">{stats.landfill_usage}%</span>
                 </div>
                 <div className="w-full bg-slate-600 rounded-full h-3 overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-emerald-400 to-teal-400 transition-all duration-500"
-                    style={{ width: `${stats.landfillUsage}%` }}
+                    style={{ width: `${stats.landfill_usage}%` }}
                   ></div>
                 </div>
               </div>
-              <p className="text-xs opacity-75">All sites operating within capacity</p>
+              <p className="text-xs opacity-75">
+                {stats.landfill_usage < 80
+                  ? 'All sites operating within capacity'
+                  : '⚠️ Nearing maximum capacity'}
+              </p>
             </div>
           </div>
 
+          {/* Quick Stats */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
             <div className="px-6 py-4 border-b border-slate-200">
               <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
@@ -226,7 +193,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* SYSTEM HEALTH */}
+      {/* System Health */}
       <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-6 border border-emerald-200">
         <div className="flex items-start justify-between">
           <div>
@@ -238,6 +205,40 @@ export default function Dashboard() {
           <div className="flex items-center space-x-2">
             <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
             <span className="text-sm font-medium text-slate-700">Live</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface CardProps {
+  title: string;
+  icon: JSX.Element;
+  bgColor: string;
+  total: number | string;
+  subtitle: string;
+  label: string;
+  value: number | string;
+  valueColor: string;
+}
+
+function DashboardCard({ title, icon, bgColor, total, subtitle, label, value, valueColor }: CardProps) {
+  return (
+    <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+      <div className="flex items-center justify-between mb-4">
+        <div className={`w-12 h-12 ${bgColor} rounded-lg flex items-center justify-center`}>
+          {icon}
+        </div>
+        <span className="text-xs font-semibold text-slate-500 uppercase">{title}</span>
+      </div>
+      <div>
+        <p className="text-3xl font-bold text-slate-800">{total}</p>
+        <p className="text-sm text-slate-500 mt-1">{subtitle}</p>
+        <div className="mt-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-600">{label}</span>
+            <span className={`font-semibold ${valueColor}`}>{value}</span>
           </div>
         </div>
       </div>
