@@ -24,6 +24,7 @@ if bin_readings_collection.count_documents({}) == 0:
 else:
     print(f"✅ MongoDB already contains {bin_readings_collection.count_documents({})} records. Skipping CSV load.")
 
+
 # -------------------------------------------------
 # DASHBOARD ENDPOINT
 # -------------------------------------------------
@@ -41,24 +42,18 @@ def dashboard():
         "alerts": summary.get("alerts", 3),
         "landfill_usage": summary.get("landfill_usage", 68),
     }
-
     return jsonify(response), 200
 
 
 # -------------------------------------------------
-# COLLECTION EFFICIENCY ENDPOINT (NEW)
+# COLLECTION EFFICIENCY ENDPOINT
 # -------------------------------------------------
 @app.route("/api/efficiency", methods=["GET"])
 def collection_efficiency():
-    """
-    Return collection efficiency trends for the dashboard graph.
-    Later, you can replace this mock data with real calculations
-    (based on completed routes, distance, or bin fill reductions).
-    """
+    """Return collection efficiency trends for dashboard graph."""
     try:
         days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         efficiencies = [82, 91, 75, 96, 88, 79, 93]
-
         data = [{"day": d, "efficiency": e} for d, e in zip(days, efficiencies)]
         return jsonify(data), 200
     except Exception as e:
@@ -167,68 +162,87 @@ def landfills():
 
 
 # -------------------------------------------------
-# ROUTES ENDPOINT
+# ROUTES ENDPOINT (GET + POST)
 # -------------------------------------------------
-@app.route("/api/routes", methods=["GET"])
-def list_routes():
-    """Return saved routes or suggest new route from bins needing collection."""
+@app.route("/api/routes", methods=["GET", "POST"])
+def routes():
+    """GET returns routes; POST creates new route."""
     try:
+        # ✅ Ensure table exists
         sql_cursor.execute("""
             CREATE TABLE IF NOT EXISTS Routes (
                 id SERIAL PRIMARY KEY,
-                route_name TEXT NOT NULL,
+                name TEXT NOT NULL,
+                area TEXT,
+                truck_id INTEGER REFERENCES Trucks(id),
                 status TEXT DEFAULT 'Scheduled',
-                scheduled_date TIMESTAMP DEFAULT NOW(),
-                distance_km DOUBLE PRECISION,
-                bin_sequence JSONB
+                created_at TIMESTAMP DEFAULT NOW()
             );
         """)
         sql_conn.commit()
 
-        sql_cursor.execute("""
-            SELECT id, route_name, status, scheduled_date, distance_km, bin_sequence
-            FROM Routes
-            ORDER BY scheduled_date DESC
-            LIMIT 20;
-        """)
-        rows = sql_cursor.fetchall()
-
-        if rows:
+        if request.method == "GET":
+            sql_cursor.execute("""
+                SELECT r.id, r.name, r.area, r.status, t.name AS truck_name
+                FROM Routes r
+                LEFT JOIN Trucks t ON r.truck_id = t.id
+                ORDER BY r.created_at DESC
+                LIMIT 20;
+            """)
+            rows = sql_cursor.fetchall()
             routes = [
                 {
                     "id": r[0],
-                    "route_name": r[1],
-                    "status": r[2],
-                    "scheduled_date": r[3].isoformat() if r[3] else None,
-                    "distance_km": r[4],
-                    "bin_sequence": r[5],
+                    "name": r[1],
+                    "area": r[2],
+                    "status": r[3],
+                    "truck_name": r[4] or "Unassigned"
                 }
                 for r in rows
             ]
             return jsonify(routes), 200
 
-        # Generate new route if none exist
-        bins = core.find_bins_for_collection(bin_readings_collection, fill_level_threshold=70)
-        serials = core.create_optimized_route(bins)
-        coords = {b['serial']: (b['lat'], b['lon']) for b in bins}
-        dist = 0.0
-        for i in range(1, len(serials)):
-            (la1, lo1) = coords.get(serials[i - 1], (None, None))
-            (la2, lo2) = coords.get(serials[i], (None, None))
-            if la1 is not None and la2 is not None:
-                dist += core.haversine(la1, lo1, la2, lo2)
+        # ✅ POST - Create new route
+        if request.method == "POST":
+            data = request.get_json()
+            name = data.get("name")
+            area = data.get("area")
+            truck_ref = data.get("truck_id")
 
-        route = {
-            "id": None,
-            "route_name": "Suggested Route",
-            "status": "In Progress" if serials else "Scheduled",
-            "scheduled_date": None,
-            "distance_km": round(dist, 2),
-            "bin_sequence": serials,
-        }
-        return jsonify([route]), 200
+            if not all([name, area, truck_ref]):
+                return jsonify({"message": "Missing route details"}), 400
+
+            # 🔍 Allow both numeric truck_id or truck_name
+            if isinstance(truck_ref, str) and not truck_ref.isdigit():
+                sql_cursor.execute("SELECT id FROM Trucks WHERE name = %s", (truck_ref,))
+                truck_row = sql_cursor.fetchone()
+                if not truck_row:
+                    return jsonify({"message": f"Truck '{truck_ref}' not found"}), 404
+                truck_id = truck_row[0]
+            else:
+                truck_id = int(truck_ref)
+
+            # ✅ Insert the route
+            sql_cursor.execute("""
+                INSERT INTO Routes (name, area, truck_id, status)
+                VALUES (%s, %s, %s, 'Scheduled')
+                RETURNING id;
+            """, (name, area, truck_id))
+            route_id = sql_cursor.fetchone()[0]
+            sql_conn.commit()
+
+            # ✅ Update truck status
+            sql_cursor.execute("UPDATE Trucks SET status = 'On-Route' WHERE id = %s", (truck_id,))
+            sql_conn.commit()
+
+            return jsonify({
+                "message": "Route created successfully",
+                "route": {"id": route_id, "name": name, "area": area, "truck_id": truck_id}
+            }), 201
 
     except Exception as e:
+        sql_conn.rollback()
+        print(f"❌ Error in /api/routes: {e}")
         return jsonify({"error": str(e)}), 500
 
 

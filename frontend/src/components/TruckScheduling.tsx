@@ -1,16 +1,21 @@
 import { useState, useEffect } from "react";
-import { Truck, MapPin, Calendar, Wrench } from "lucide-react";
+import { Truck, MapPin, Calendar, Wrench, X } from "lucide-react";
 
 export default function TruckManagement() {
   const [trucks, setTrucks] = useState<any[]>([]);
+  const [routes, setRoutes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [newRoute, setNewRoute] = useState({ name: "", area: "", truck_id: "" });
   const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     fetchTrucks();
+    fetchRoutes();
   }, []);
 
+  // Fetch trucks
   const fetchTrucks = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/trucks`);
@@ -24,19 +29,27 @@ export default function TruckManagement() {
     }
   };
 
-  // ✅ Handle Assign Truck (trigger collection route assignment)
+  // Fetch routes
+  const fetchRoutes = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/routes`);
+      if (!res.ok) throw new Error("Failed to fetch routes");
+      const data = await res.json();
+      setRoutes(data || []);
+    } catch (err) {
+      console.error("Error fetching routes:", err);
+    }
+  };
+
+  // ✅ Assign Truck
   const handleAssignTruck = async () => {
     setAssigning(true);
     try {
-      const res = await fetch(`${API_BASE}/api/collect`, {
-        method: "POST",
-      });
+      const res = await fetch(`${API_BASE}/api/collect`, { method: "POST" });
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.message || "Failed to assign truck");
-
-      alert(data.message); // e.g., "Truck T-103 assigned to route"
-      await fetchTrucks(); // refresh fleet status
+      alert(data.message);
+      await fetchTrucks();
     } catch (err) {
       console.error("Error assigning truck:", err);
       alert(String(err));
@@ -45,25 +58,48 @@ export default function TruckManagement() {
     }
   };
 
-  // ✅ Handle Completing a route
+  // ✅ Complete Route
   const handleCompleteRoute = async (truckId: number) => {
     try {
       const res = await fetch(`${API_BASE}/api/complete_route/${truckId}`, {
         method: "POST",
       });
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.message || "Failed to complete route");
-
       alert(data.message);
       await fetchTrucks();
+      await fetchRoutes();
     } catch (err) {
       console.error("Error completing route:", err);
       alert(String(err));
     }
   };
 
-  // Truck status breakdown
+  // ✅ Create Route
+  const handleCreateRoute = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${API_BASE}/api/routes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newRoute),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to create route");
+
+      alert(`✅ Route "${newRoute.name}" created successfully!`);
+      setShowModal(false);
+      setNewRoute({ name: "", area: "", truck_id: "" });
+      await fetchRoutes();
+      await fetchTrucks();
+    } catch (err) {
+      console.error("Error creating route:", err);
+      alert(String(err));
+    }
+  };
+
+  // Status counters
   const totalFleet = trucks.length;
   const available = trucks.filter((t) => t.status === "Idle").length;
   const onRoute = trucks.filter((t) => t.status === "On-Route").length;
@@ -77,9 +113,7 @@ export default function TruckManagement() {
           <Truck className="w-6 h-6 text-white" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-slate-800">
-            Fleet Management
-          </h3>
+          <h3 className="text-lg font-semibold text-slate-800">Fleet Management</h3>
           <p className="text-sm text-slate-500">
             Schedule and monitor waste collection trucks
           </p>
@@ -143,18 +177,37 @@ export default function TruckManagement() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
           <div className="flex justify-between items-center px-4 py-3 border-b border-slate-200">
             <h4 className="text-sm font-semibold text-slate-700">Scheduled Routes</h4>
-            <button className="text-emerald-600 text-sm font-medium hover:underline">
+            <button
+              onClick={() => setShowModal(true)}
+              className="text-emerald-600 text-sm font-medium hover:underline"
+            >
               Create Route
             </button>
           </div>
-          <div className="p-4 text-center text-slate-400 text-sm">
-            <Calendar className="w-6 h-6 mx-auto mb-2 opacity-60" />
-            No scheduled routes
+          <div className="p-4 text-sm">
+            {routes.length === 0 ? (
+              <div className="text-center text-slate-400">
+                <Calendar className="w-6 h-6 mx-auto mb-2 opacity-60" />
+                No scheduled routes
+              </div>
+            ) : (
+              routes.map((r, idx) => (
+                <div key={idx} className="p-2 border-b border-slate-100 flex justify-between items-center">
+                  <div>
+                    <p className="font-medium text-slate-700">{r.name}</p>
+                    <p className="text-xs text-slate-500">{r.area}</p>
+                  </div>
+                  <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md font-semibold">
+                    {r.truck_name || "Unassigned"}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
 
-      {/* CALENDAR VIEW */}
+      {/* Calendar View */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
         <div className="flex justify-between items-center mb-4">
           <h4 className="text-sm font-semibold text-slate-700">Calendar View</h4>
@@ -168,9 +221,69 @@ export default function TruckManagement() {
           <Calendar className="w-10 h-10 mb-2 opacity-60" />
           <p className="text-sm font-medium">Interactive Calendar</p>
           <p className="text-xs text-slate-400">Drag-and-drop truck scheduling interface</p>
-          <p className="text-xs text-slate-400 mt-1">Ready for future calendar integration</p>
         </div>
       </div>
+
+      {/* 🟢 Create Route Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-96 shadow-lg relative">
+            <button
+              onClick={() => setShowModal(false)}
+              className="absolute top-3 right-3 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h4 className="text-lg font-semibold text-slate-800 mb-4">Create New Route</h4>
+            <form onSubmit={handleCreateRoute} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Route Name</label>
+                <input
+                  type="text"
+                  value={newRoute.name}
+                  onChange={(e) => setNewRoute({ ...newRoute, name: e.target.value })}
+                  required
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Area / Zone</label>
+                <input
+                  type="text"
+                  value={newRoute.area}
+                  onChange={(e) => setNewRoute({ ...newRoute, area: e.target.value })}
+                  required
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Assign Truck</label>
+                <select
+                  value={newRoute.truck_id}
+                  onChange={(e) => setNewRoute({ ...newRoute, truck_id: e.target.value })}
+                  required
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Select Truck</option>
+                  {trucks
+                    .filter((t) => t.status === "Idle")
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-emerald-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-emerald-700"
+              >
+                Create Route
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
