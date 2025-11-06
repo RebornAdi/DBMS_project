@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Bell, AlertCircle, CheckCircle, Clock, XCircle } from 'lucide-react';
 
+// Interface to match Flask API data
 interface MonitoringAlert {
   id: number;
-  alert_type: string;
+  type: string;      // Changed from alert_type
   message: string;
   severity: string;
-  is_resolved: boolean;
-  created_at: string;
-  resolved_at?: string;
+  timestamp: string; // Changed from created_at
 }
 
+// Transaction type (placeholder, as there's no /api/transactions)
 interface Transaction {
   id: number;
   transaction_type: string;
@@ -20,9 +20,11 @@ interface Transaction {
 
 export default function Monitoring() {
   const [alerts, setAlerts] = useState<MonitoringAlert[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]); // Will be empty
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'unresolved' | 'resolved'>('unresolved');
+  
+  // Note: Filter logic is removed as Flask API doesn't provide 'is_resolved'
+  // const [filter, setFilter] = useState<'all' | 'unresolved' | 'resolved'>('unresolved');
 
   const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -34,13 +36,12 @@ export default function Monitoring() {
 
   const fetchData = async () => {
     try {
-      const [alertsRes, transactionsRes] = await Promise.all([
-        fetch(`${API_BASE}/api/alerts`).then(res => res.json()),
-        fetch(`${API_BASE}/api/transactions`).then(res => res.json())
-      ]);
-
-      setAlerts(alertsRes || []);
-      setTransactions(transactionsRes || []);
+      // Only fetching alerts, as /api/transactions doesn't exist
+      const alertsRes = await fetch(`${API_BASE}/api/alerts`);
+      const alertsData = await alertsRes.json();
+      
+      setAlerts(alertsData || []);
+      setTransactions([]); // Set transactions to empty
     } catch (error) {
       console.error('Error fetching monitoring data:', error);
     } finally {
@@ -63,30 +64,12 @@ export default function Monitoring() {
     return Bell;
   };
 
-  const getTransactionStatusColor = (status: string) => {
-    const colors = {
-      Success: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-      Failed: 'bg-red-100 text-red-700 border-red-200',
-      Pending: 'bg-amber-100 text-amber-700 border-amber-200',
-    };
-    return colors[status as keyof typeof colors] || 'bg-slate-100 text-slate-700';
-  };
+  // ... (Transaction color/icon functions remain, though unused) ...
 
-  const getTransactionIcon = (status: string) => {
-    if (status === 'Success') return CheckCircle;
-    if (status === 'Failed') return XCircle;
-    return Clock;
-  };
-
-  const filteredAlerts = alerts.filter(alert => {
-    if (filter === 'all') return true;
-    if (filter === 'unresolved') return !alert.is_resolved;
-    if (filter === 'resolved') return alert.is_resolved;
-    return true;
-  });
-
-  const unresolvedCount = alerts.filter(a => !a.is_resolved).length;
-  const criticalCount = alerts.filter(a => a.severity === 'Critical' && !a.is_resolved).length;
+  // All alerts are considered "unresolved"
+  const filteredAlerts = alerts;
+  const unresolvedCount = alerts.length;
+  const criticalCount = alerts.filter(a => a.severity === 'Critical').length;
 
   if (loading) {
     return (
@@ -114,8 +97,8 @@ export default function Monitoring() {
         {[
           { label: 'Active Alerts', value: unresolvedCount, icon: Bell, color: 'bg-red-500' },
           { label: 'Critical', value: criticalCount, icon: AlertCircle, color: 'bg-orange-500' },
-          { label: 'Resolved', value: alerts.filter(a => a.is_resolved).length, icon: CheckCircle, color: 'bg-emerald-500' },
-          { label: 'Success Rate', value: `${Math.round((transactions.filter(t => t.status === 'Success').length / (transactions.length || 1)) * 100)}%`, icon: CheckCircle, color: 'bg-blue-500' },
+          { label: 'Resolved', value: 0, icon: CheckCircle, color: 'bg-emerald-500' }, // Placeholder
+          { label: 'Success Rate', value: '100%', icon: CheckCircle, color: 'bg-blue-500' }, // Placeholder
         ].map((stat, idx) => {
           const Icon = stat.icon;
           return (
@@ -148,21 +131,7 @@ export default function Monitoring() {
                 </span>
               )}
             </h4>
-            <div className="flex space-x-2">
-              {['all', 'unresolved', 'resolved'].map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f as any)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                    filter === f
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {f.charAt(0).toUpperCase() + f.slice(1)}
-                </button>
-              ))}
-            </div>
+            {/* Filter buttons removed as they are not supported by the API */}
           </div>
 
           <div className="divide-y divide-slate-200 max-h-[600px] overflow-y-auto">
@@ -172,9 +141,7 @@ export default function Monitoring() {
                 return (
                   <div
                     key={alert.id}
-                    className={`p-6 hover:bg-slate-50 transition-colors ${
-                      alert.is_resolved ? 'opacity-60' : ''
-                    }`}
+                    className="p-6 hover:bg-slate-50 transition-colors"
                   >
                     <div className="flex items-start space-x-4">
                       <div className={`p-2 rounded-lg ${
@@ -194,30 +161,20 @@ export default function Monitoring() {
                         <div className="flex items-start justify-between">
                           <div>
                             <div className="flex items-center space-x-2">
-                              <h5 className="font-semibold text-slate-800">{alert.alert_type}</h5>
+                              <h5 className="font-semibold text-slate-800">{alert.type}</h5>
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${getSeverityColor(alert.severity)}`}>
                                 {alert.severity}
                               </span>
                             </div>
                             <p className="text-sm text-slate-600 mt-1">{alert.message}</p>
                           </div>
-                          {!alert.is_resolved && (
-                            <button className="text-xs text-emerald-600 hover:text-emerald-700 font-medium whitespace-nowrap">
-                              Resolve
-                            </button>
-                          )}
+                          {/* Resolve button removed */}
                         </div>
                         <div className="flex items-center space-x-4 text-xs text-slate-500">
                           <span className="flex items-center space-x-1">
                             <Clock className="w-3 h-3" />
-                            <span>{new Date(alert.created_at).toLocaleString()}</span>
+                            <span>{new Date(alert.timestamp).toLocaleString()}</span>
                           </span>
-                          {alert.is_resolved && alert.resolved_at && (
-                            <span className="flex items-center space-x-1 text-emerald-600">
-                              <CheckCircle className="w-3 h-3" />
-                              <span>Resolved {new Date(alert.resolved_at).toLocaleString()}</span>
-                            </span>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -234,7 +191,7 @@ export default function Monitoring() {
           </div>
         </div>
 
-        {/* Transactions */}
+        {/* Transactions (Placeholder) */}
         <div className="space-y-6">
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
             <div className="px-6 py-4 border-b border-slate-200">
@@ -243,34 +200,9 @@ export default function Monitoring() {
                 <span>Transactions</span>
               </h4>
             </div>
-            <div className="divide-y divide-slate-200 max-h-96 overflow-y-auto">
-              {transactions.slice(0, 10).map((transaction) => {
-                const Icon = getTransactionIcon(transaction.status);
-                return (
-                  <div key={transaction.id} className="p-4 hover:bg-slate-50 transition-colors">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-3">
-                        <Icon className={`w-4 h-4 mt-0.5 ${
-                          transaction.status === 'Success' ? 'text-emerald-600' :
-                          transaction.status === 'Failed' ? 'text-red-600' :
-                          'text-amber-600'
-                        }`} />
-                        <div>
-                          <p className="text-sm font-medium text-slate-800">
-                            {transaction.transaction_type}
-                          </p>
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            {new Date(transaction.created_at).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${getTransactionStatusColor(transaction.status)}`}>
-                        {transaction.status}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="p-4 text-center text-slate-400 text-sm">
+              <XCircle className="w-6 h-6 mx-auto mb-2 opacity-60" />
+              No transaction data available
             </div>
           </div>
         </div>

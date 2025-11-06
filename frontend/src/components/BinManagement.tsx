@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { MapPin, Trash2, Clock } from "lucide-react";
 
 export default function BinManagement() {
-  const [bins, setBins] = useState<any[]>([]);
+  const [bins, setBins] = useState<any[]>([]); // Using any[] for Flask data
   const [loading, setLoading] = useState(true);
   const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -15,7 +15,7 @@ export default function BinManagement() {
       const res = await fetch(`${API_BASE}/api/bins`);
       if (!res.ok) throw new Error("Failed to fetch bins");
       const data = await res.json();
-      console.log("Fetched bins:", data); // ✅ Check data structure in browser console
+      console.log("Fetched bins:", data);
       setBins(data);
     } catch (error) {
       console.error("Error fetching bins:", error);
@@ -86,8 +86,8 @@ export default function BinManagement() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {bins.map((bin, idx) => (
-              <tr key={idx} className="hover:bg-slate-50 transition-colors">
+            {bins.map((bin) => (
+              <tr key={bin.serial} className="hover:bg-slate-50 transition-colors">
                 <td className="px-6 py-4 text-sm font-medium text-slate-800">
                   {bin.serial || "N/A"}
                 </td>
@@ -95,20 +95,20 @@ export default function BinManagement() {
                   {bin.address || "Unknown"}
                 </td>
                 <td className="px-6 py-4 text-sm">
-  <div
-    className={`w-24 text-center px-2 py-1 rounded-md font-semibold text-xs border shadow-sm ${
-      bin.status === "Full"
-        ? "bg-red-100 text-red-700 border-red-200"
-        : bin.status === "Half Full"
-        ? "bg-amber-100 text-amber-700 border-amber-200"
-        : bin.status === "Empty"
-        ? "bg-emerald-100 text-emerald-700 border-emerald-200"
-        : "bg-emerald-100 text-slate-700 border-slate-200"
-    }`}
-  >
-    {bin.status}
-  </div>
-</td>
+                  <div
+                    className={`w-24 text-center px-2 py-1 rounded-md font-semibold text-xs border shadow-sm ${
+                      bin.status === "Full"
+                        ? "bg-red-100 text-red-700 border-red-200"
+                        : bin.status === "Half Full"
+                        ? "bg-amber-100 text-amber-700 border-amber-200"
+                        : bin.status === "Empty"
+                        ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                        : "bg-slate-100 text-slate-700 border-slate-200" // Default/Unknown
+                    }`}
+                  >
+                    {bin.status}
+                  </div>
+                </td>
 
                 <td className="px-6 py-4">
                   <div className="w-full bg-slate-200 rounded-full h-2">
@@ -129,6 +129,7 @@ export default function BinManagement() {
                 </td>
                 <td className="px-6 py-4 text-sm text-slate-600">
                   <MapPin className="w-4 h-4 inline mr-1 text-slate-400" />
+                  {/* Use optional chaining in case lat/lon are null */}
                   {bin.lat?.toFixed(4)}, {bin.lon?.toFixed(4)}
                 </td>
               </tr>

@@ -14,24 +14,45 @@ interface DashboardStats {
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isCollecting, setIsCollecting] = useState(false);
   const API_BASE = import.meta.env.VITE_API_URL;
 
   // Fetch dashboard stats from backend API
+  const fetchStats = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/dashboard`);
+      if (!res.ok) throw new Error('Failed to fetch dashboard data');
+      const data = await res.json();
+      setStats(data);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/dashboard`);
-        if (!res.ok) throw new Error('Failed to fetch dashboard data');
-        const data = await res.json();
-        setStats(data);
-      } catch (error) {
-        console.error('Error fetching stats:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchStats();
   }, [API_BASE]);
+
+  // Handle triggering the collection
+  const handleCollect = async () => {
+    setIsCollecting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/collect`, {
+        method: "POST",
+      });
+      const data = await res.json();
+
+      alert(data.message); 
+      await fetchStats(); // Refresh stats after action
+    } catch (error) {
+      console.error("Error triggering collection:", error);
+      alert("An error occurred while triggering collection.");
+    } finally {
+      setIsCollecting(false);
+    }
+  };
 
   if (loading || !stats) {
     return (
@@ -54,9 +75,21 @@ export default function Dashboard() {
             <p className="text-sm text-slate-500">Real-time monitoring across all operations</p>
           </div>
         </div>
-        <button className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium text-sm shadow-sm">
-          Generate Report
-        </button>
+        <div className="flex space-x-2">
+          <button className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium text-sm shadow-sm border border-slate-200">
+            Generate Report
+          </button>
+          
+          <button
+            onClick={handleCollect}
+            disabled={isCollecting}
+            className={`px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium text-sm shadow-sm ${
+              isCollecting ? "opacity-50 cursor-not-allowed" : ""
+            }`}
+          >
+            {isCollecting ? "Working..." : "Trigger Collection"}
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -93,7 +126,7 @@ export default function Dashboard() {
           total={stats.active_routes}
           subtitle="Active routes"
           label="Efficiency"
-          value="94%"
+          value="94%" // Placeholder
           valueColor="text-purple-600"
         />
 
@@ -105,7 +138,7 @@ export default function Dashboard() {
           total={stats.alerts}
           subtitle="Active alerts"
           label="Priority"
-          value="High"
+          value="High" // Placeholder
           valueColor="text-red-600"
         />
       </div>
@@ -118,6 +151,7 @@ export default function Dashboard() {
             <h4 className="font-semibold text-slate-800">Collection Efficiency</h4>
           </div>
           <div className="p-6">
+            {/* This is the line with the error */}
             <div className="h-64 flex items-end justify-between space-x-4">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, idx) => {
                 const height = [85, 92, 78, 95, 88, 72, 90][idx];
@@ -192,26 +226,11 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-      {/* System Health */}
-      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-6 border border-emerald-200">
-        <div className="flex items-start justify-between">
-          <div>
-            <h4 className="font-semibold text-slate-800 mb-2">System Health: Excellent</h4>
-            <p className="text-sm text-slate-600 max-w-2xl">
-              All subsystems are operational. Real-time monitoring active. API integration endpoints ready for backend connection.
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse"></div>
-            <span className="text-sm font-medium text-slate-700">Live</span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
 
+// Dashboard Card Component
 interface CardProps {
   title: string;
   icon: JSX.Element;
