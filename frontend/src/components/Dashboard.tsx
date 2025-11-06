@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Truck, Route, MapPin, TrendingUp, AlertCircle, Activity } from 'lucide-react';
+import { Trash2, Truck, Route, MapPin, TrendingUp, AlertCircle, Activity, FileText } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface DashboardStats {
   total_bins: number;
@@ -22,6 +24,7 @@ export default function Dashboard() {
   const [efficiency, setEfficiency] = useState<EfficiencyData[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCollecting, setIsCollecting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const API_BASE = import.meta.env.VITE_API_URL;
 
   // Fetch dashboard + efficiency data
@@ -37,7 +40,6 @@ export default function Dashboard() {
       const statsData = await statsRes.json();
       const effData = await effRes.json();
 
-      // Convert efficiency values to numbers just in case
       const normalizedEff = effData.map((d: any) => ({
         day: d.day,
         efficiency: Number(d.efficiency) || 0
@@ -73,6 +75,64 @@ export default function Dashboard() {
     }
   };
 
+  // ✅ Generate PDF Report
+  const handleGenerateReport = async () => {
+    if (!stats) return;
+    setIsGenerating(true);
+
+    try {
+      const doc = new jsPDF();
+
+      // Title
+      doc.setFontSize(18);
+      doc.text("Smart Waste Management - Weekly Report", 14, 20);
+
+      doc.setFontSize(11);
+      doc.setTextColor(100);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
+
+      // System Summary
+      autoTable(doc, {
+        startY: 35,
+        head: [["Metric", "Value"]],
+        body: [
+          ["Total Bins", stats.total_bins],
+          ["Full Bins", stats.full_bins],
+          ["Total Trucks", stats.total_trucks],
+          ["Active Trucks", stats.active_trucks],
+          ["Active Routes", stats.active_routes],
+          ["Active Alerts", stats.alerts],
+          ["Landfill Usage (%)", `${stats.landfill_usage}%`],
+        ],
+        theme: "striped",
+        styles: { fontSize: 11 },
+      });
+
+      // Efficiency Table
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 10,
+        head: [["Day", "Collection Efficiency (%)"]],
+        body: efficiency.map(e => [e.day, e.efficiency]),
+        theme: "grid",
+        headStyles: { fillColor: [16, 185, 129] },
+        styles: { fontSize: 11 },
+      });
+
+      // Footer
+      doc.setFontSize(10);
+      doc.setTextColor(150);
+      doc.text("Smart Waste Management System © 2025", 14, 290);
+
+      // Save
+      doc.save(`SmartWaste_Report_${new Date().toISOString().slice(0,10)}.pdf`);
+    } catch (error) {
+      console.error("Error generating report:", error);
+      alert("Failed to generate report.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   if (loading || !stats) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -95,8 +155,13 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="flex space-x-2">
-          <button className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium text-sm shadow-sm border border-slate-200">
-            Generate Report
+          <button
+            onClick={handleGenerateReport}
+            disabled={isGenerating}
+            className="flex items-center px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium text-sm shadow-sm border border-slate-200"
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            {isGenerating ? "Generating..." : "Generate Report"}
           </button>
           <button
             onClick={handleCollect}
