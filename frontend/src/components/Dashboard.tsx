@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Truck, Route, MapPin, TrendingUp, AlertCircle, Activity } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 interface DashboardStats {
   total_bins: number;
@@ -11,41 +12,59 @@ interface DashboardStats {
   landfill_usage: number;
 }
 
+interface EfficiencyData {
+  day: string;
+  efficiency: number;
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [efficiency, setEfficiency] = useState<EfficiencyData[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCollecting, setIsCollecting] = useState(false);
   const API_BASE = import.meta.env.VITE_API_URL;
 
-  // Fetch dashboard stats from backend API
+  // Fetch dashboard + efficiency data
   const fetchStats = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/dashboard`);
-      if (!res.ok) throw new Error('Failed to fetch dashboard data');
-      const data = await res.json();
-      setStats(data);
+      const [statsRes, effRes] = await Promise.all([
+        fetch(`${API_BASE}/api/dashboard`),
+        fetch(`${API_BASE}/api/efficiency`)
+      ]);
+
+      if (!statsRes.ok || !effRes.ok) throw new Error('Failed to fetch dashboard data');
+
+      const statsData = await statsRes.json();
+      const effData = await effRes.json();
+
+      // Convert efficiency values to numbers just in case
+      const normalizedEff = effData.map((d: any) => ({
+        day: d.day,
+        efficiency: Number(d.efficiency) || 0
+      }));
+
+      setStats(statsData);
+      setEfficiency(normalizedEff);
     } catch (error) {
       console.error('Error fetching stats:', error);
     } finally {
       setLoading(false);
     }
   };
-  
+
   useEffect(() => {
     fetchStats();
   }, [API_BASE]);
 
-  // Handle triggering the collection
+  // Handle waste collection trigger
   const handleCollect = async () => {
     setIsCollecting(true);
     try {
-      const res = await fetch(`${API_BASE}/api/collect`, {
-        method: "POST",
-      });
+      const res = await fetch(`${API_BASE}/api/collect`, { method: "POST" });
       const data = await res.json();
 
-      alert(data.message); 
-      await fetchStats(); // Refresh stats after action
+      alert(data.message);
+      await fetchStats();
     } catch (error) {
       console.error("Error triggering collection:", error);
       alert("An error occurred while triggering collection.");
@@ -64,7 +83,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Header Section */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <div className="bg-gradient-to-br from-emerald-500 to-teal-500 p-3 rounded-xl shadow-lg">
@@ -79,7 +98,6 @@ export default function Dashboard() {
           <button className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors font-medium text-sm shadow-sm border border-slate-200">
             Generate Report
           </button>
-          
           <button
             onClick={handleCollect}
             disabled={isCollecting}
@@ -94,7 +112,6 @@ export default function Dashboard() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-4 gap-6">
-        {/* BINS */}
         <DashboardCard
           title="Bins"
           icon={<Trash2 className="w-6 h-6 text-blue-600" />}
@@ -105,8 +122,6 @@ export default function Dashboard() {
           value={stats.full_bins}
           valueColor="text-amber-600"
         />
-
-        {/* TRUCKS */}
         <DashboardCard
           title="Fleet"
           icon={<Truck className="w-6 h-6 text-emerald-600" />}
@@ -117,8 +132,6 @@ export default function Dashboard() {
           value={stats.active_trucks}
           valueColor="text-emerald-600"
         />
-
-        {/* ROUTES */}
         <DashboardCard
           title="Routes"
           icon={<Route className="w-6 h-6 text-purple-600" />}
@@ -126,11 +139,9 @@ export default function Dashboard() {
           total={stats.active_routes}
           subtitle="Active routes"
           label="Efficiency"
-          value="94%" // Placeholder
+          value="94%"
           valueColor="text-purple-600"
         />
-
-        {/* ALERTS */}
         <DashboardCard
           title="Alerts"
           icon={<AlertCircle className="w-6 h-6 text-red-600" />}
@@ -138,40 +149,36 @@ export default function Dashboard() {
           total={stats.alerts}
           subtitle="Active alerts"
           label="Priority"
-          value="High" // Placeholder
+          value="High"
           valueColor="text-red-600"
         />
       </div>
 
-      {/* Landfill and Collection Section */}
+      {/* Efficiency Chart + Landfill Usage */}
       <div className="grid grid-cols-3 gap-6">
-        {/* Collection Efficiency */}
+        {/* Collection Efficiency Chart */}
         <div className="col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm">
-          <div className="px-6 py-4 border-b border-slate-200">
+          <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
             <h4 className="font-semibold text-slate-800">Collection Efficiency</h4>
+            <span className="text-xs text-slate-500">Weekly performance (%)</span>
           </div>
-          <div className="p-6">
-            {/* This is the line with the error */}
-            <div className="h-64 flex items-end justify-between space-x-4">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, idx) => {
-                const height = [85, 92, 78, 95, 88, 72, 90][idx];
-                return (
-                  <div key={day} className="flex-1 flex flex-col items-center space-y-2">
-                    <div className="w-full flex flex-col justify-end h-full">
-                      <div
-                        className="w-full bg-gradient-to-t from-emerald-500 to-teal-400 rounded-t-lg transition-all hover:opacity-80 cursor-pointer relative group"
-                        style={{ height: `${height}%` }}
-                      >
-                        <span className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                          {height}% efficient
-                        </span>
-                      </div>
-                    </div>
-                    <span className="text-xs font-medium text-slate-600">{day}</span>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="p-6 h-72">
+            {efficiency.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={efficiency} margin={{ top: 20, right: 10, left: 0, bottom: 10 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="day" tick={{ fontSize: 12 }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#fff", borderRadius: "8px", fontSize: "12px" }}
+                    cursor={{ fill: "rgba(16,185,129,0.1)" }}
+                  />
+                  <Bar dataKey="efficiency" fill="#10b981" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-sm text-slate-500 text-center mt-20">No efficiency data available</p>
+            )}
           </div>
         </div>
 
@@ -230,7 +237,7 @@ export default function Dashboard() {
   );
 }
 
-// Dashboard Card Component
+// Reusable Card
 interface CardProps {
   title: string;
   icon: JSX.Element;

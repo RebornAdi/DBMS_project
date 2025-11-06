@@ -2,21 +2,21 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import trial_core as core
 
-# ---------------------------------------------
+# -------------------------------------------------
 # INITIALIZE FLASK APP
-# ---------------------------------------------
+# -------------------------------------------------
 app = Flask(__name__)
 CORS(app)
 
-# ---------------------------------------------
+# -------------------------------------------------
 # SETUP DATABASE CONNECTIONS
-# ---------------------------------------------
+# -------------------------------------------------
 sql_conn, sql_cursor, mongo_client, mongo_db, bin_readings_collection = core.get_connections()
 core.setup_databases(sql_cursor, sql_conn, bin_readings_collection, drop_existing=False)
 
-# ---------------------------------------------
+# -------------------------------------------------
 # AUTO-LOAD DATA IF EMPTY
-# ---------------------------------------------
+# -------------------------------------------------
 if bin_readings_collection.count_documents({}) == 0:
     print("⚠️ No bin data found in MongoDB. Loading from CSV...")
     core.load_data_from_csv(sql_cursor, sql_conn, bin_readings_collection)
@@ -24,12 +24,12 @@ if bin_readings_collection.count_documents({}) == 0:
 else:
     print(f"✅ MongoDB already contains {bin_readings_collection.count_documents({})} records. Skipping CSV load.")
 
-# ---------------------------------------------
+# -------------------------------------------------
 # DASHBOARD ENDPOINT
-# ---------------------------------------------
+# -------------------------------------------------
 @app.route("/api/dashboard", methods=["GET"])
 def dashboard():
-    """Return frontend-ready dashboard summary data."""
+    """Return summary data for dashboard cards."""
     summary = core.get_dashboard_summary(sql_cursor, bin_readings_collection)
 
     response = {
@@ -45,9 +45,29 @@ def dashboard():
     return jsonify(response), 200
 
 
-# ---------------------------------------------
+# -------------------------------------------------
+# COLLECTION EFFICIENCY ENDPOINT (NEW)
+# -------------------------------------------------
+@app.route("/api/efficiency", methods=["GET"])
+def collection_efficiency():
+    """
+    Return collection efficiency trends for the dashboard graph.
+    Later, you can replace this mock data with real calculations
+    (based on completed routes, distance, or bin fill reductions).
+    """
+    try:
+        days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        efficiencies = [82, 91, 75, 96, 88, 79, 93]
+
+        data = [{"day": d, "efficiency": e} for d, e in zip(days, efficiencies)]
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# -------------------------------------------------
 # BINS ENDPOINT
-# ---------------------------------------------
+# -------------------------------------------------
 @app.route("/api/bins", methods=["GET"])
 def bins():
     """Return standardized bin data for frontend."""
@@ -74,9 +94,9 @@ def bins():
     return jsonify(formatted_bins), 200
 
 
-# ---------------------------------------------
+# -------------------------------------------------
 # TRUCKS ENDPOINT
-# ---------------------------------------------
+# -------------------------------------------------
 @app.route("/api/trucks", methods=["GET"])
 def trucks():
     """Return all trucks and their status."""
@@ -86,9 +106,9 @@ def trucks():
     return jsonify(trucks_list), 200
 
 
-# ---------------------------------------------
+# -------------------------------------------------
 # ALERTS ENDPOINT
-# ---------------------------------------------
+# -------------------------------------------------
 @app.route("/api/alerts", methods=["GET"])
 def alerts():
     """Return recent system alerts."""
@@ -106,9 +126,9 @@ def alerts():
     return jsonify(alerts_list), 200
 
 
-# ---------------------------------------------
+# -------------------------------------------------
 # LANDFILLS ENDPOINT
-# ---------------------------------------------
+# -------------------------------------------------
 @app.route("/api/landfills", methods=["GET"])
 def landfills():
     """Return landfill capacity and usage."""
@@ -126,7 +146,6 @@ def landfills():
     data = sql_cursor.fetchall()
 
     if not data:
-        # Dummy sample landfill (only once)
         sql_cursor.execute(
             "INSERT INTO Landfills (name, capacity_tons, used_tons) VALUES ('Central Landfill', 10000, 6800);"
         )
@@ -147,15 +166,12 @@ def landfills():
     return jsonify(landfills_list), 200
 
 
-# ---------------------------------------------
-# ROUTES ENDPOINT (NEW)
-# ---------------------------------------------
+# -------------------------------------------------
+# ROUTES ENDPOINT
+# -------------------------------------------------
 @app.route("/api/routes", methods=["GET"])
 def list_routes():
-    """
-    Return saved routes if present; otherwise generate a suggested route
-    from bins needing collection.
-    """
+    """Return saved routes or suggest new route from bins needing collection."""
     try:
         sql_cursor.execute("""
             CREATE TABLE IF NOT EXISTS Routes (
@@ -169,7 +185,6 @@ def list_routes():
         """)
         sql_conn.commit()
 
-        # Fetch existing routes
         sql_cursor.execute("""
             SELECT id, route_name, status, scheduled_date, distance_km, bin_sequence
             FROM Routes
@@ -192,7 +207,7 @@ def list_routes():
             ]
             return jsonify(routes), 200
 
-        # Otherwise, suggest a route
+        # Generate new route if none exist
         bins = core.find_bins_for_collection(bin_readings_collection, fill_level_threshold=70)
         serials = core.create_optimized_route(bins)
         coords = {b['serial']: (b['lat'], b['lon']) for b in bins}
@@ -217,12 +232,12 @@ def list_routes():
         return jsonify({"error": str(e)}), 500
 
 
-# ---------------------------------------------
+# -------------------------------------------------
 # TRIGGER COLLECTION ENDPOINT
-# ---------------------------------------------
+# -------------------------------------------------
 @app.route("/api/collect", methods=["POST"])
 def collect():
-    """Trigger waste collection and assign truck."""
+    """Trigger waste collection and assign a truck."""
     bins = core.find_bins_for_collection(bin_readings_collection)
     if not bins:
         return jsonify({"message": "No bins need collection."}), 200
@@ -237,9 +252,9 @@ def collect():
     return jsonify({"message": f"Truck {truck[1]} assigned to route."}), 200
 
 
-# ---------------------------------------------
+# -------------------------------------------------
 # COMPLETE ROUTE ENDPOINT
-# ---------------------------------------------
+# -------------------------------------------------
 @app.route("/api/complete_route/<int:truck_id>", methods=["POST"])
 def complete_route_endpoint(truck_id):
     """Mark a truck's route as complete and reset its status."""
@@ -260,17 +275,17 @@ def complete_route_endpoint(truck_id):
         return jsonify({"message": f"Error completing route: {e}"}), 500
 
 
-# ---------------------------------------------
+# -------------------------------------------------
 # HEALTH CHECK
-# ---------------------------------------------
+# -------------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"status": "Backend is running ✅"}), 200
 
 
-# ---------------------------------------------
+# -------------------------------------------------
 # RUN APP
-# ---------------------------------------------
+# -------------------------------------------------
 if __name__ == "__main__":
     print("🚀 Starting Smart Waste Backend Server on http://localhost:5000")
     app.run(debug=True, port=5000)
