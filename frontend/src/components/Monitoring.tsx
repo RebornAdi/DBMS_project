@@ -1,75 +1,51 @@
-import { useState, useEffect } from 'react';
-import { Bell, AlertCircle, CheckCircle, Clock, XCircle } from 'lucide-react';
-
-// Interface to match Flask API data
-interface MonitoringAlert {
-  id: number;
-  type: string;      // Changed from alert_type
-  message: string;
-  severity: string;
-  timestamp: string; // Changed from created_at
-}
-
-// Transaction type (placeholder, as there's no /api/transactions)
-interface Transaction {
-  id: number;
-  transaction_type: string;
-  status: string;
-  created_at: string;
-}
+import { useState, useEffect } from "react";
+import { AlertTriangle, Trash2, Clock, MapPin, Activity, AlertCircle } from "lucide-react";
 
 export default function Monitoring() {
-  const [alerts, setAlerts] = useState<MonitoringAlert[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]); // Will be empty
+  const [bins, setBins] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Note: Filter logic is removed as Flask API doesn't provide 'is_resolved'
-  // const [filter, setFilter] = useState<'all' | 'unresolved' | 'resolved'>('unresolved');
-
   const API_BASE = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000);
+    const interval = setInterval(fetchData, 10000); // Auto-refresh every 10s
     return () => clearInterval(interval);
   }, []);
 
   const fetchData = async () => {
     try {
-      // Only fetching alerts, as /api/transactions doesn't exist
-      const alertsRes = await fetch(`${API_BASE}/api/alerts`);
+      const [binsRes, alertsRes] = await Promise.all([
+        fetch(`${API_BASE}/api/bins`),
+        fetch(`${API_BASE}/api/alerts`)
+      ]);
+
+      const binsData = await binsRes.json();
       const alertsData = await alertsRes.json();
-      
+
+      setBins(binsData || []);
       setAlerts(alertsData || []);
-      setTransactions([]); // Set transactions to empty
-    } catch (error) {
-      console.error('Error fetching monitoring data:', error);
+    } catch (err) {
+      console.error("Error fetching monitoring data:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const getSeverityColor = (severity: string) => {
-    const colors = {
-      Critical: 'bg-red-100 text-red-700 border-red-200',
-      High: 'bg-orange-100 text-orange-700 border-orange-200',
-      Medium: 'bg-amber-100 text-amber-700 border-amber-200',
-      Low: 'bg-blue-100 text-blue-700 border-blue-200',
+  const getFillColor = (level: number) => {
+    if (level >= 90) return "bg-red-500";
+    if (level >= 70) return "bg-amber-500";
+    return "bg-emerald-500";
+  };
+
+  const getAlertColor = (severity: string) => {
+    const map: Record<string, string> = {
+      High: "bg-red-100 text-red-700 border-red-200",
+      Medium: "bg-amber-100 text-amber-700 border-amber-200",
+      Low: "bg-blue-100 text-blue-700 border-blue-200",
     };
-    return colors[severity as keyof typeof colors] || 'bg-slate-100 text-slate-700';
+    return map[severity] || "bg-slate-100 text-slate-700 border-slate-200";
   };
-
-  const getSeverityIcon = (severity: string) => {
-    if (severity === 'Critical' || severity === 'High') return AlertCircle;
-    return Bell;
-  };
-
-  // ... (Transaction color/icon functions remain, though unused) ...
-
-  // All alerts are considered "unresolved"
-  const filteredAlerts = alerts;
-  const unresolvedCount = alerts.length;
-  const criticalCount = alerts.filter(a => a.severity === 'Critical').length;
 
   if (loading) {
     return (
@@ -82,129 +58,133 @@ export default function Monitoring() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center space-x-4">
-        <div className="bg-gradient-to-br from-red-500 to-pink-500 p-3 rounded-xl shadow-lg">
-          <Bell className="w-6 h-6 text-white" />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <div className="bg-gradient-to-br from-emerald-500 to-teal-500 p-3 rounded-xl shadow-lg">
+            <Activity className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-800">Real-Time Monitoring</h3>
+            <p className="text-sm text-slate-500">
+              Live updates of bin fill levels and active system alerts
+            </p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-lg font-semibold text-slate-800">Real-Time Monitoring</h3>
-          <p className="text-sm text-slate-500">Live alerts and system notifications</p>
-        </div>
+        <button
+          onClick={fetchData}
+          className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors font-medium text-sm shadow-sm"
+        >
+          Refresh Data
+        </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        {[
-          { label: 'Active Alerts', value: unresolvedCount, icon: Bell, color: 'bg-red-500' },
-          { label: 'Critical', value: criticalCount, icon: AlertCircle, color: 'bg-orange-500' },
-          { label: 'Resolved', value: 0, icon: CheckCircle, color: 'bg-emerald-500' }, // Placeholder
-          { label: 'Success Rate', value: '100%', icon: CheckCircle, color: 'bg-blue-500' }, // Placeholder
-        ].map((stat, idx) => {
-          const Icon = stat.icon;
-          return (
-            <div key={idx} className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500 font-medium">{stat.label}</p>
-                  <p className="text-3xl font-bold text-slate-800 mt-1">{stat.value}</p>
+      {/* Alerts Section */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
+            <AlertTriangle className="w-5 h-5 text-red-500" />
+            <span>Active Alerts</span>
+          </h4>
+          <span className="text-sm text-slate-500">{alerts.length} alerts</span>
+        </div>
+        <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+          {alerts.length > 0 ? (
+            alerts.map((a: any, idx: number) => (
+              <div
+                key={idx}
+                className={`flex items-start justify-between p-4 border-l-4 ${
+                  a.severity === "High"
+                    ? "border-red-500"
+                    : a.severity === "Medium"
+                    ? "border-amber-500"
+                    : "border-blue-500"
+                }`}
+              >
+                <div className="space-y-1">
+                  <p className="font-semibold text-slate-800">{a.type}</p>
+                  <p className="text-sm text-slate-600">{a.message}</p>
+                  <p className="text-xs text-slate-500">
+                    <Clock className="w-3 h-3 inline mr-1 text-slate-400" />
+                    {new Date(a.timestamp).toLocaleString()}
+                  </p>
                 </div>
-                <div className={`w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center opacity-20`}>
-                  <Icon className="w-6 h-6" />
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Alerts and Transactions */}
-      <div className="grid grid-cols-3 gap-6">
-        {/* Alerts */}
-        <div className="col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm">
-          <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-            <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
-              <Bell className="w-5 h-5 text-red-500" />
-              <span>System Alerts</span>
-              {unresolvedCount > 0 && (
-                <span className="ml-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                  {unresolvedCount}
+                <span
+                  className={`px-2 py-1 rounded-md text-xs font-semibold border ${getAlertColor(
+                    a.severity
+                  )}`}
+                >
+                  {a.severity}
                 </span>
-              )}
-            </h4>
-            {/* Filter buttons removed as they are not supported by the API */}
-          </div>
-
-          <div className="divide-y divide-slate-200 max-h-[600px] overflow-y-auto">
-            {filteredAlerts.length > 0 ? (
-              filteredAlerts.map((alert) => {
-                const Icon = getSeverityIcon(alert.severity);
-                return (
-                  <div
-                    key={alert.id}
-                    className="p-6 hover:bg-slate-50 transition-colors"
-                  >
-                    <div className="flex items-start space-x-4">
-                      <div className={`p-2 rounded-lg ${
-                        alert.severity === 'Critical' ? 'bg-red-100' :
-                        alert.severity === 'High' ? 'bg-orange-100' :
-                        alert.severity === 'Medium' ? 'bg-amber-100' :
-                        'bg-blue-100'
-                      }`}>
-                        <Icon className={`w-5 h-5 ${
-                          alert.severity === 'Critical' ? 'text-red-600' :
-                          alert.severity === 'High' ? 'text-orange-600' :
-                          alert.severity === 'Medium' ? 'text-amber-600' :
-                          'text-blue-600'
-                        }`} />
-                      </div>
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="flex items-center space-x-2">
-                              <h5 className="font-semibold text-slate-800">{alert.type}</h5>
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${getSeverityColor(alert.severity)}`}>
-                                {alert.severity}
-                              </span>
-                            </div>
-                            <p className="text-sm text-slate-600 mt-1">{alert.message}</p>
-                          </div>
-                          {/* Resolve button removed */}
-                        </div>
-                        <div className="flex items-center space-x-4 text-xs text-slate-500">
-                          <span className="flex items-center space-x-1">
-                            <Clock className="w-3 h-3" />
-                            <span>{new Date(alert.timestamp).toLocaleString()}</span>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="p-12 text-center text-slate-500">
-                <Bell className="w-16 h-16 mx-auto text-slate-300 mb-4" />
-                <p className="font-medium">No alerts found</p>
-                <p className="text-sm mt-1">All systems operating normally</p>
               </div>
-            )}
-          </div>
+            ))
+          ) : (
+            <div className="p-6 text-center text-slate-500 text-sm">
+              <AlertCircle className="w-6 h-6 mx-auto mb-2 text-slate-400" />
+              No active alerts at the moment
+            </div>
+          )}
         </div>
+      </div>
 
-        {/* Transactions (Placeholder) */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-            <div className="px-6 py-4 border-b border-slate-200">
-              <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
-                <CheckCircle className="w-5 h-5 text-emerald-500" />
-                <span>Transactions</span>
-              </h4>
-            </div>
-            <div className="p-4 text-center text-slate-400 text-sm">
-              <XCircle className="w-6 h-6 mx-auto mb-2 opacity-60" />
-              No transaction data available
-            </div>
-          </div>
+      {/* Bin Monitoring Table */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200">
+          <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
+            <Trash2 className="w-5 h-5 text-emerald-500" />
+            <span>Live Bin Readings</span>
+          </h4>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Bin ID</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Address</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Fill Level</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Last Updated</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Location</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {bins.slice(0, 10).map((bin, idx) => (
+                <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-6 py-4 text-sm font-medium text-slate-800">{bin.serial}</td>
+                  <td className="px-6 py-4 text-sm text-slate-600">{bin.address}</td>
+                  <td className="px-6 py-4 text-sm">
+                    <span
+                      className={`px-2 py-1 rounded-md text-xs font-semibold border ${
+                        bin.status === "Full"
+                          ? "bg-red-100 text-red-700 border-red-200"
+                          : bin.status === "Half Full"
+                          ? "bg-amber-100 text-amber-700 border-amber-200"
+                          : "bg-emerald-100 text-emerald-700 border-emerald-200"
+                      }`}
+                    >
+                      {bin.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-full ${getFillColor(bin.fill_level)} transition-all`}
+                        style={{ width: `${bin.fill_level}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">{bin.fill_level}%</p>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-slate-600">
+                    <Clock className="w-4 h-4 inline mr-1 text-slate-400" />
+                    {bin.last_updated ? new Date(bin.last_updated).toLocaleString() : "N/A"}
+                  </td>
+                  <td className="px-6 py-4 text-sm text-slate-600">
+                    <MapPin className="w-4 h-4 inline mr-1 text-slate-400" />
+                    {bin.lat?.toFixed(4)}, {bin.lon?.toFixed(4)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

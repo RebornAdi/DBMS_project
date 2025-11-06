@@ -37,9 +37,9 @@ def dashboard():
         "full_bins": summary.get("full_bins", 0),
         "active_trucks": summary.get("active_trucks", 0),
         "total_trucks": summary.get("idle_trucks", 0) + summary.get("active_trucks", 0),
-        "active_routes": summary.get("active_trucks", 0), # Simplified: 1 truck = 1 active route
-        "alerts": summary.get("alerts", 3), # Get actual alert count
-        "landfill_usage": summary.get("landfill_usage", 68), # Placeholder
+        "active_routes": summary.get("active_trucks", 0),
+        "alerts": summary.get("alerts", 3),
+        "landfill_usage": summary.get("landfill_usage", 68),
     }
 
     return jsonify(response), 200
@@ -51,7 +51,6 @@ def dashboard():
 @app.route("/api/bins", methods=["GET"])
 def bins():
     """Return standardized bin data for frontend."""
-    # Using aggregation pipeline to get latest reading for each bin
     pipeline = [
         {"$sort": {"time": -1}},
         {"$group": {"_id": "$serial", "latest": {"$first": "$$ROOT"}}},
@@ -114,10 +113,27 @@ def alerts():
 def landfills():
     """Return landfill capacity and usage."""
     sql_cursor.execute("""
-        SELECT id, name, capacity_tons, used_tons
-        FROM Landfills;
+        CREATE TABLE IF NOT EXISTS Landfills (
+            id SERIAL PRIMARY KEY,
+            name TEXT,
+            capacity_tons DOUBLE PRECISION,
+            used_tons DOUBLE PRECISION
+        );
     """)
+    sql_conn.commit()
+
+    sql_cursor.execute("SELECT id, name, capacity_tons, used_tons FROM Landfills;")
     data = sql_cursor.fetchall()
+
+    if not data:
+        # Dummy sample landfill (only once)
+        sql_cursor.execute(
+            "INSERT INTO Landfills (name, capacity_tons, used_tons) VALUES ('Central Landfill', 10000, 6800);"
+        )
+        sql_conn.commit()
+        sql_cursor.execute("SELECT id, name, capacity_tons, used_tons FROM Landfills;")
+        data = sql_cursor.fetchall()
+
     landfills_list = [
         {
             "id": l[0],
@@ -130,12 +146,83 @@ def landfills():
     ]
     return jsonify(landfills_list), 200
 
+
 # ---------------------------------------------
-# TRIGGER COLLECTION ENDPOINT (MODIFIED)
+# ROUTES ENDPOINT (NEW)
+# ---------------------------------------------
+@app.route("/api/routes", methods=["GET"])
+def list_routes():
+    """
+    Return saved routes if present; otherwise generate a suggested route
+    from bins needing collection.
+    """
+    try:
+        sql_cursor.execute("""
+            CREATE TABLE IF NOT EXISTS Routes (
+                id SERIAL PRIMARY KEY,
+                route_name TEXT NOT NULL,
+                status TEXT DEFAULT 'Scheduled',
+                scheduled_date TIMESTAMP DEFAULT NOW(),
+                distance_km DOUBLE PRECISION,
+                bin_sequence JSONB
+            );
+        """)
+        sql_conn.commit()
+
+        # Fetch existing routes
+        sql_cursor.execute("""
+            SELECT id, route_name, status, scheduled_date, distance_km, bin_sequence
+            FROM Routes
+            ORDER BY scheduled_date DESC
+            LIMIT 20;
+        """)
+        rows = sql_cursor.fetchall()
+
+        if rows:
+            routes = [
+                {
+                    "id": r[0],
+                    "route_name": r[1],
+                    "status": r[2],
+                    "scheduled_date": r[3].isoformat() if r[3] else None,
+                    "distance_km": r[4],
+                    "bin_sequence": r[5],
+                }
+                for r in rows
+            ]
+            return jsonify(routes), 200
+
+        # Otherwise, suggest a route
+        bins = core.find_bins_for_collection(bin_readings_collection, fill_level_threshold=70)
+        serials = core.create_optimized_route(bins)
+        coords = {b['serial']: (b['lat'], b['lon']) for b in bins}
+        dist = 0.0
+        for i in range(1, len(serials)):
+            (la1, lo1) = coords.get(serials[i - 1], (None, None))
+            (la2, lo2) = coords.get(serials[i], (None, None))
+            if la1 is not None and la2 is not None:
+                dist += core.haversine(la1, lo1, la2, lo2)
+
+        route = {
+            "id": None,
+            "route_name": "Suggested Route",
+            "status": "In Progress" if serials else "Scheduled",
+            "scheduled_date": None,
+            "distance_km": round(dist, 2),
+            "bin_sequence": serials,
+        }
+        return jsonify([route]), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------
+# TRIGGER COLLECTION ENDPOINT
 # ---------------------------------------------
 @app.route("/api/collect", methods=["POST"])
 def collect():
-    """Trigger waste collection and route assignment."""
+    """Trigger waste collection and assign truck."""
     bins = core.find_bins_for_collection(bin_readings_collection)
     if not bins:
         return jsonify({"message": "No bins need collection."}), 200
@@ -146,33 +233,27 @@ def collect():
 
     route = core.create_optimized_route(bins)
     core.assign_truck_to_route(sql_cursor, sql_conn, truck[0], route)
-    
-    # This line was REMOVED to keep the truck on-route
-    # core.complete_route(sql_cursor, sql_conn, truck[0]) 
-    
+
     return jsonify({"message": f"Truck {truck[1]} assigned to route."}), 200
 
 
 # ---------------------------------------------
-# COMPLETE ROUTE ENDPOINT (NEW)
+# COMPLETE ROUTE ENDPOINT
 # ---------------------------------------------
 @app.route("/api/complete_route/<int:truck_id>", methods=["POST"])
 def complete_route_endpoint(truck_id):
     """Mark a truck's route as complete and reset its status."""
     try:
-        # Check if truck exists and is on-route
         sql_cursor.execute("SELECT name, status FROM Trucks WHERE id = %s", (truck_id,))
         truck = sql_cursor.fetchone()
-        
+
         if not truck:
             return jsonify({"message": "Truck not found."}), 404
-        
+
         if truck[1] != 'On-Route':
             return jsonify({"message": f"Truck {truck[0]} is not on an active route."}), 400
 
-        # Call the core function to complete the route
         core.complete_route(sql_cursor, sql_conn, truck_id)
-        
         return jsonify({"message": f"Route for truck {truck[0]} completed."}), 200
     except Exception as e:
         sql_conn.rollback()
@@ -180,16 +261,15 @@ def complete_route_endpoint(truck_id):
 
 
 # ---------------------------------------------
-# HEALTH CHECK ENDPOINT
+# HEALTH CHECK
 # ---------------------------------------------
 @app.route("/", methods=["GET"])
 def home():
-    """Health check route."""
     return jsonify({"status": "Backend is running ✅"}), 200
 
 
 # ---------------------------------------------
-# MAIN EXECUTION
+# RUN APP
 # ---------------------------------------------
 if __name__ == "__main__":
     print("🚀 Starting Smart Waste Backend Server on http://localhost:5000")
