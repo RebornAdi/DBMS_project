@@ -64,16 +64,6 @@ export default function LandfillManagement() {
   const avgUsage = totalCapacity > 0 ? Math.round((totalUsage / totalCapacity) * 100) : 0;
   const nearFullSites = landfills.filter(l => l.usage_percent >= 70).length;
 
-  const monthlyData = [
-    { month: 'Jan', usage: 3200 },
-    { month: 'Feb', usage: 3500 },
-    { month: 'Mar', usage: 3800 },
-    { month: 'Apr', usage: 4200 },
-    { month: 'May', usage: 4600 },
-    { month: 'Jun', usage: 5000 },
-  ];
-  const maxUsage = Math.max(...monthlyData.map(d => d.usage));
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -112,36 +102,9 @@ export default function LandfillManagement() {
         })}
       </div>
 
-      {/* Landfill Data & Charts */}
+      {/* Landfill Data Section */}
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2 space-y-6">
-          {/* Usage Trends Chart */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-            <div className="px-6 py-4 border-b border-slate-200">
-              <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
-                <TrendingUp className="w-5 h-5 text-orange-500" />
-                <span>Usage Trends (Last 6 Months)</span>
-              </h4>
-            </div>
-            <div className="p-6">
-              <div className="flex items-end justify-between space-x-4 h-64">
-                {monthlyData.map((data, idx) => (
-                  <div key={idx} className="flex-1 flex flex-col items-center space-y-2">
-                    <div className="w-full flex flex-col justify-end h-full">
-                      <div
-                        className="w-full bg-gradient-to-t from-orange-500 to-red-400 rounded-t-lg transition-all hover:opacity-80 cursor-pointer"
-                        style={{ height: `${(data.usage / maxUsage) * 100}%` }}
-                      ></div>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-xs font-semibold text-slate-700">{data.month}</p>
-                      <p className="text-xs text-slate-500">{(data.usage / 1000).toFixed(0)}k tons</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
 
           {/* Landfill Table */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
@@ -200,7 +163,7 @@ export default function LandfillManagement() {
 
         {/* Right: Alerts & Quick Stats */}
         <div className="space-y-6">
-         {/* ... (Other cards remain the same) ... */}
+         {/* Placeholder for future cards or alerts */}
         </div>
       </div>
     </div>

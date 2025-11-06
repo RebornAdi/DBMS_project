@@ -112,45 +112,8 @@ export default function RouteOptimization() {
         })}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
-        {/* Map placeholder & metrics */}
-        <div className="col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm">
-          <div className="px-6 py-4 border-b border-slate-200">
-            <h4 className="font-semibold text-slate-800 flex items-center space-x-2">
-              <MapPin className="w-5 h-5 text-purple-500" />
-              <span>Interactive Route Map</span>
-            </h4>
-          </div>
-          <div className="p-6">
-            <div className="h-96 bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg flex items-center justify-center border-2 border-dashed border-slate-200 relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-50/50 to-pink-50/50"></div>
-              <div className="text-center relative z-10">
-                <div className="w-20 h-20 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <Navigation className="w-10 h-10 text-white" />
-                </div>
-                <p className="text-slate-700 font-semibold text-lg">Leaflet.js Map Integration</p>
-                <p className="text-sm text-slate-500 mt-2 max-w-md">
-                  Interactive map displaying optimized collection routes with real-time truck tracking
-                </p>
-                <div className="mt-4 flex items-center justify-center space-x-4 text-xs text-slate-600">
-                  <LegendDot color="bg-red-500" label="Urgent" />
-                  <LegendDot color="bg-amber-500" label="Priority" />
-                  <LegendDot color="bg-blue-500" label="Truck" />
-                  <LegendDot color="bg-emerald-500" label="Route" />
-                </div>
-                <p className="text-xs text-slate-400 mt-4">API integration ready</p>
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-3 gap-4">
-              <MetricBox title="Time Saved" value="2.5 hrs" subtitle="vs manual routing" />
-              <MetricBox title="Fuel Saved" value="18%" subtitle="optimized routes" />
-              <MetricBox title="Coverage" value="96%" subtitle="bins on schedule" />
-            </div>
-          </div>
-        </div>
-
-        {/* Urgent & today's routes */}
+      {/* Removed the Interactive Route Map section. Keeping only the right-side panels. */}
+      <div className="grid grid-cols-1 gap-6">
         <div className="space-y-6">
           {/* Urgent bins */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">

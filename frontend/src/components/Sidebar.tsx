@@ -21,8 +21,6 @@ const navigation = [
   { id: "routes", name: "Routes", icon: Route },
   { id: "landfills", name: "Landfills", icon: MapPin },
   { id: "monitoring", name: "Monitoring", icon: Bell },
-  { id: "reports", name: "Reports", icon: FileText },
-  { id: "settings", name: "Settings", icon: Settings },
 ];
 
 export default function Sidebar({
