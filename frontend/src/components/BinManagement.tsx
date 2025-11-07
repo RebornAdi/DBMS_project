@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { MapPin, Trash2, Clock } from "lucide-react";
 
 export default function BinManagement() {
-  const [bins, setBins] = useState<any[]>([]); // Using any[] for Flask data
+  const [bins, setBins] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const API_BASE = import.meta.env.VITE_API_URL;
 

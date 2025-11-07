@@ -4,7 +4,6 @@ import Header from './components/Header';
 import Dashboard from './components/Dashboard';
 import BinManagement from './components/BinManagement';
 import TruckScheduling from './components/TruckScheduling';
-import RouteOptimization from './components/RouteOptimization';
 import LandfillManagement from './components/LandfillManagement';
 import Monitoring from './components/Monitoring';
 
@@ -19,8 +18,6 @@ function App() {
         return <BinManagement />;
       case 'trucks':
         return <TruckScheduling />;
-      case 'routes':
-        return <RouteOptimization />;
       case 'landfills':
         return <LandfillManagement />;
       case 'monitoring':

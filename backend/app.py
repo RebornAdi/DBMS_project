@@ -171,12 +171,9 @@ def routes():
         # ✅ Ensure table exists
         sql_cursor.execute("""
             CREATE TABLE IF NOT EXISTS Routes (
-                id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 area TEXT,
-                truck_id INTEGER REFERENCES Trucks(id),
-                status TEXT DEFAULT 'Scheduled',
-                created_at TIMESTAMP DEFAULT NOW()
+                truck_id VARCHAR REFERENCES Trucks(id)
             );
         """)
         sql_conn.commit()

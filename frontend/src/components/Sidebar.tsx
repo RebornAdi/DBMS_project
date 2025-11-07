@@ -18,7 +18,6 @@ const navigation = [
   { id: "dashboard", name: "Dashboard", icon: LayoutDashboard },
   { id: "bins", name: "Bins", icon: Trash2 },
   { id: "trucks", name: "Trucks", icon: Truck },
-  { id: "routes", name: "Routes", icon: Route },
   { id: "landfills", name: "Landfills", icon: MapPin },
   { id: "monitoring", name: "Monitoring", icon: Bell },
 ];
